@@ -1,0 +1,7 @@
+CAMERA_INDEX = 0
+
+BACKEND_API = "http://localhost:8080/api"
+
+EAR_THRESHOLD = 0.25
+
+DROWSINESS_SECONDS = 2

@@ -1,2 +1,17 @@
 .vscode/
 backend/target/
+# Python
+ai/venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment
+.env
+
+# VS Code
+.vscode/
+
+# Python cache
+.pytest_cache/
