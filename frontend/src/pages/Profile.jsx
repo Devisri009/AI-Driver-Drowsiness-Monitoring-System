@@ -1,27 +1,56 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useState, useEffect } from 'react';
 import { AppContext } from '../context/AppContext';
 import { Icons } from '../components/Icons';
+import { api } from '../api/api';
 
 export const Profile = () => {
-  const { currentUser, updateProfile } = useContext(AppContext);
+  const { currentUser } = useContext(AppContext);
   const [isEditing, setIsEditing] = useState(false);
-  
-  const [formData, setFormData] = useState({
-    name: currentUser?.name || '',
-    phone: currentUser?.phone || '',
-  });
-  
+
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState('');
+
+  const [formData, setFormData] = useState({ name: '', phone: '' });
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  const handleSave = (e) => {
+  // Fetch profile on mount
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const data = await api.getUserProfile();
+        setProfile(data);
+        setFormData({ name: data.name || '', phone: data.phone || '' });
+      } catch (err) {
+        setFetchError(err.message || 'Failed to load profile.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchProfile();
+  }, []);
+
+  const handleSave = async (e) => {
     e.preventDefault();
-    updateProfile({
-      name: formData.name,
-      phone: formData.phone
-    });
-    setIsEditing(false);
-    setSuccessMsg('Profile updated successfully.');
-    setTimeout(() => setSuccessMsg(''), 3000);
+    setSaveError('');
+    setSaving(true);
+    try {
+      const updated = await api.updateUserProfile({
+        name: formData.name,
+        phone: formData.phone,
+      });
+      setProfile(updated);
+      setFormData({ name: updated.name || '', phone: updated.phone || '' });
+      setIsEditing(false);
+      setSuccessMsg('Profile updated successfully.');
+      setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (err) {
+      setSaveError(err.message || 'Failed to update profile.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -33,6 +62,22 @@ export const Profile = () => {
         </div>
       </div>
 
+      {/* Loading */}
+      {loading && (
+        <div style={styles.infoBanner}>
+          <span>Loading profile...</span>
+        </div>
+      )}
+
+      {/* Fetch error */}
+      {fetchError && (
+        <div style={styles.errorBanner}>
+          <Icons.Warning size={18} color="#b91c1c" />
+          <span>{fetchError}</span>
+        </div>
+      )}
+
+      {/* Success */}
       {successMsg && (
         <div style={styles.successBanner}>
           <Icons.Check size={18} color="var(--success)" />
@@ -40,13 +85,22 @@ export const Profile = () => {
         </div>
       )}
 
+      {/* Save error */}
+      {saveError && (
+        <div style={styles.errorBanner}>
+          <Icons.Warning size={18} color="#b91c1c" />
+          <span>{saveError}</span>
+        </div>
+      )}
+
+      {!loading && !fetchError && profile && (
       <div className="card" style={styles.profileCard}>
         <div style={styles.profileHeader}>
           <div style={styles.avatarLarge}>
-            {currentUser?.name?.charAt(0) || 'D'}
+            {profile.name?.charAt(0)?.toUpperCase() || 'D'}
           </div>
           <div>
-            <h2 style={styles.userName}>{currentUser?.name || 'Driver'}</h2>
+            <h2 style={styles.userName}>{profile.name || 'Driver'}</h2>
             <span className="badge badge-success">Active Account</span>
           </div>
         </div>
@@ -75,24 +129,23 @@ export const Profile = () => {
                     type="tel"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    required
                   />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Email Address (Read Only)</label>
                   <input
                     type="email"
-                    value={currentUser?.email || ''}
+                    value={profile.email || ''}
                     disabled
                     style={styles.disabledInput}
                   />
                 </div>
                 <div style={styles.actionRow}>
-                  <button type="button" className="btn btn-secondary" onClick={() => setIsEditing(false)}>
+                  <button type="button" className="btn btn-secondary" onClick={() => { setIsEditing(false); setSaveError(''); }}>
                     Cancel
                   </button>
-                  <button type="submit" className="btn btn-primary">
-                    Save Changes
+                  <button type="submit" className="btn btn-primary" disabled={saving}>
+                    {saving ? 'Saving...' : 'Save Changes'}
                   </button>
                 </div>
               </form>
@@ -100,15 +153,15 @@ export const Profile = () => {
               <div style={styles.infoList}>
                 <div style={styles.infoRow}>
                   <span style={styles.infoLabel}>Full Name</span>
-                  <span style={styles.infoValue}>{currentUser?.name || 'Not provided'}</span>
+                  <span style={styles.infoValue}>{profile.name || 'Not provided'}</span>
                 </div>
                 <div style={styles.infoRow}>
                   <span style={styles.infoLabel}>Email Address</span>
-                  <span style={styles.infoValue}>{currentUser?.email || 'Not provided'}</span>
+                  <span style={styles.infoValue}>{profile.email || 'Not provided'}</span>
                 </div>
                 <div style={styles.infoRow}>
                   <span style={styles.infoLabel}>Phone Number</span>
-                  <span style={styles.infoValue}>{currentUser?.phone || 'Not provided'}</span>
+                  <span style={styles.infoValue}>{profile.phone || 'Not provided'}</span>
                 </div>
                 <div style={styles.actionRow}>
                   <button className="btn btn-primary" onClick={() => setIsEditing(true)}>
@@ -148,6 +201,7 @@ export const Profile = () => {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };
@@ -155,6 +209,32 @@ export const Profile = () => {
 const styles = {
   header: {
     marginBottom: '2rem'
+  },
+  infoBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.625rem',
+    backgroundColor: '#f0f9ff',
+    border: '1px solid #bae6fd',
+    padding: '0.75rem 1rem',
+    borderRadius: '8px',
+    color: '#0369a1',
+    fontSize: '0.9rem',
+    fontWeight: '600',
+    marginBottom: '1.5rem'
+  },
+  errorBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.625rem',
+    backgroundColor: 'rgba(239,68,68,0.06)',
+    border: '1px solid rgba(239,68,68,0.2)',
+    padding: '0.75rem 1rem',
+    borderRadius: '8px',
+    color: '#b91c1c',
+    fontSize: '0.9rem',
+    fontWeight: '600',
+    marginBottom: '1.5rem'
   },
   title: {
     fontSize: '1.75rem',

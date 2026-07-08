@@ -1,25 +1,49 @@
-import React, { useContext } from 'react';
+import React, { useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppContext } from '../context/AppContext';
-import { LineChart } from '../components/SVGChart';
+import { api } from '../api/api';
 import { Icons } from '../components/Icons';
 
 export const Dashboard = () => {
-  const { alerts, isMonitoring, currentUser } = useContext(AppContext);
+  const { isMonitoring, currentUser } = useContext(AppContext);
   const navigate = useNavigate();
 
-  // Today's alerts
-  const todayAlerts = alerts.filter(a => {
-    const alertDate = new Date(a.timestamp);
-    return alertDate.toDateString() === new Date().toDateString();
-  });
-  
-  const todayAlertCount = todayAlerts.length;
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  // Last Detection Time
-  const lastDetectionTime = alerts.length > 0 
-    ? new Date(alerts[0].timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : 'No recent events';
+  useEffect(() => {
+    const fetchDashboard = async () => {
+      try {
+        const response = await api.getDashboardSummary();
+        setData(response);
+      } catch (err) {
+        setError(err.message || 'Failed to fetch dashboard data.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchDashboard();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="page-container" style={{ maxWidth: '1200px', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
+        <h2 style={{ color: 'var(--text-main)' }}>Loading dashboard data...</h2>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="page-container" style={{ maxWidth: '1200px' }}>
+        <div style={{ padding: '2rem', backgroundColor: 'var(--danger)', color: '#fff', borderRadius: '12px', marginTop: '2rem' }}>
+          <h3>Error</h3>
+          <p>{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   // Driver Safety Status & Risk Level
   let safetyStatus = 'SAFE';
@@ -27,67 +51,46 @@ export const Dashboard = () => {
   let statusColor = 'var(--success)';
   let riskLevel = 'LOW';
 
-  if (todayAlertCount > 5) {
+  if (data.alertsToday > 5) {
     safetyStatus = 'DROWSINESS DETECTED';
     safetyStatusIndicator = '🔴';
     statusColor = 'var(--danger)';
     riskLevel = 'HIGH';
-  } else if (todayAlertCount > 1) {
+  } else if (data.alertsToday > 1) {
     safetyStatus = 'WARNING';
     safetyStatusIndicator = '🟠';
     statusColor = 'var(--warning)';
     riskLevel = 'MEDIUM';
   }
 
-  // Last 7 days statistics for personal chart
-  const getSevenDayStats = () => {
-    const dates = [];
-    const counts = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const dateStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-      dates.push(dateStr);
-      
-      const count = alerts.filter(a => {
-        const alertDate = new Date(a.timestamp);
-        return alertDate.toDateString() === d.toDateString();
-      }).length;
-      counts.push(count);
-    }
-    return { dates, counts };
-  };
-
-  const { dates, counts } = getSevenDayStats();
-
   const statusCards = [
     {
-      title: 'Driver Status',
-      value: safetyStatus,
-      icon: <Icons.User size={24} color={statusColor} />,
-      valueColor: statusColor,
-      subtext: 'Current AI safety assessment'
+      title: 'Total Alerts',
+      value: data.totalAlerts.toString(),
+      icon: <Icons.Alerts size={24} color="var(--primary)" />,
+      valueColor: 'var(--text-main)',
+      subtext: 'All recorded fatigue events'
     },
     {
-      title: 'Monitoring Status',
-      value: isMonitoring ? 'ACTIVE' : 'STANDBY',
-      icon: <Icons.Eye size={24} color={isMonitoring ? 'var(--success)' : 'var(--text-sub)'} />,
-      valueColor: isMonitoring ? 'var(--success)' : 'var(--text-sub)',
-      subtext: isMonitoring ? 'Camera tracking enabled' : 'Camera is offline'
-    },
-    {
-      title: 'Today\'s Alerts',
-      value: todayAlertCount.toString(),
-      icon: <Icons.Alerts size={24} color={todayAlertCount > 0 ? 'var(--warning)' : 'var(--success)'} />,
+      title: 'Alerts Today',
+      value: data.alertsToday.toString(),
+      icon: <Icons.Alerts size={24} color={data.alertsToday > 0 ? 'var(--warning)' : 'var(--success)'} />,
       valueColor: 'var(--text-main)',
       subtext: 'Fatigue events logged today'
     },
     {
-      title: 'Last Detection',
-      value: lastDetectionTime,
-      icon: <Icons.Rest size={24} color="var(--primary)" />,
+      title: 'High Severity',
+      value: data.highSeverityAlerts.toString(),
+      icon: <Icons.Warning size={24} color={data.highSeverityAlerts > 0 ? 'var(--danger)' : 'var(--success)'} />,
+      valueColor: data.highSeverityAlerts > 0 ? 'var(--danger)' : 'var(--success)',
+      subtext: 'Critical drowsiness events'
+    },
+    {
+      title: 'Medium / Low Severity',
+      value: `${data.mediumSeverityAlerts} / ${data.lowSeverityAlerts}`,
+      icon: <Icons.Rest size={24} color="var(--warning)" />,
       valueColor: 'var(--text-main)',
-      subtext: 'Time of last logged event'
+      subtext: 'Moderate and mild warnings'
     }
   ];
 
@@ -183,17 +186,34 @@ export const Dashboard = () => {
           </ul>
         </div>
 
-        {/* 4. Drowsiness Events Chart */}
+        {/* 4. Latest Alert Details */}
         <div className="card" style={styles.chartCard}>
           <div style={styles.cardHeader}>
             <Icons.Alerts size={24} color="var(--text-main)" />
-            <h3 style={styles.sectionTitle}>Drowsiness Events - Last 7 Days</h3>
+            <h3 style={styles.sectionTitle}>Latest Alert</h3>
           </div>
-          <p style={styles.sectionDesc}>A simple overview of your recent fatigue alerts.</p>
-          
-          <div style={styles.chartWrapper}>
-            <LineChart data={counts} labels={dates} />
-          </div>
+          {data.latestAlert ? (
+             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: '600', color: 'var(--text-sub)' }}>Type:</span>
+                  <span style={{ fontWeight: '700', color: 'var(--text-main)' }}>{data.latestAlert.alertType}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: '600', color: 'var(--text-sub)' }}>Severity:</span>
+                  <span style={{ fontWeight: '700', color: data.latestAlert.severity === 'HIGH' ? 'var(--danger)' : 'var(--warning)' }}>{data.latestAlert.severity}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: '600', color: 'var(--text-sub)' }}>Message:</span>
+                  <span style={{ fontWeight: '600', color: 'var(--text-main)' }}>{data.latestAlert.message}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: '600', color: 'var(--text-sub)' }}>Time:</span>
+                  <span style={{ fontWeight: '600', color: 'var(--text-main)' }}>{new Date(data.latestAlert.timestamp).toLocaleString()}</span>
+                </div>
+             </div>
+          ) : (
+             <p style={{ ...styles.sectionDesc, marginTop: '1rem' }}>No alerts recorded yet.</p>
+          )}
         </div>
       </div>
 

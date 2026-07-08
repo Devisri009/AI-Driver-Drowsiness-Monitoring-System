@@ -1,29 +1,36 @@
 import React, { createContext, useState, useEffect } from 'react';
+import { api } from '../api/api';
 
 export const AppContext = createContext();
 
 // Setup initial alert logs if none exist in localStorage
 const initialAlerts = [];
 
-// Helper to compute SHA-256 hash
-const hashPassword = async (password) => {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+const decodeJWT = (token) => {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => 
+      '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+    ).join(''));
+    return JSON.parse(jsonPayload);
+  } catch (e) {
+    return null;
+  }
 };
 
 export const AppProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(() => {
-    const saved = localStorage.getItem('driveguard_user');
-    return saved ? JSON.parse(saved) : null;
+    const token = localStorage.getItem('driveguard_token');
+    if (token) {
+      const decoded = decodeJWT(token);
+      return decoded ? { email: decoded.sub || decoded.email || 'user' } : null;
+    }
+    return null;
   });
 
   const [alerts, setAlerts] = useState(() => {
-    const savedUser = localStorage.getItem('driveguard_user');
-    const user = savedUser ? JSON.parse(savedUser) : null;
-    const key = user ? `driveguard_alerts_${user.email}` : 'driveguard_alerts';
+    const key = currentUser ? `driveguard_alerts_${currentUser.email}` : 'driveguard_alerts';
     const saved = localStorage.getItem(key);
     return saved ? JSON.parse(saved) : initialAlerts;
   });
@@ -42,54 +49,29 @@ export const AppProvider = ({ children }) => {
     setAlerts(loadedAlerts);
   }, [currentUser]);
 
-  // Sync current user state changes to localStorage
-  useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem('driveguard_user', JSON.stringify(currentUser));
-    } else {
-      localStorage.removeItem('driveguard_user');
-    }
-  }, [currentUser]);
-
   // Auth Functions
   const loginUser = async (email, password) => {
-    const registeredUsers = JSON.parse(localStorage.getItem('registered_users') || '[]');
-    const passwordHash = await hashPassword(password);
-    
-    let matchedUser = registeredUsers.find(
-      u => (u.email === email) && 
-           (u.passwordHash === passwordHash || u.password === password)
-    );
-
-
-
-    if (matchedUser) {
-      setCurrentUser(matchedUser);
-      // Mock JWT structure for future Spring Boot backend integration
-      localStorage.setItem('driveguard_token', `mock-jwt-token-for-${matchedUser.email}-${Date.now()}`);
-      return true;
+    try {
+      const response = await api.login({ email, password });
+      if (response.token) {
+        localStorage.setItem('driveguard_token', response.token);
+        const decoded = decodeJWT(response.token);
+        setCurrentUser({ email: decoded?.sub || email });
+        return { success: true };
+      }
+      return { success: false, message: 'Invalid token received.' };
+    } catch (error) {
+      return { success: false, message: error.message || 'Login failed.' };
     }
-    return false;
   };
 
   const registerUser = async (name, email, phone, password) => {
-    const registeredUsers = JSON.parse(localStorage.getItem('registered_users') || '[]');
-    
-    // Check if exists
-    if (registeredUsers.some(u => u.email === email)) {
-      return { success: false, message: 'Email already registered.' };
+    try {
+      await api.register({ fullName: name, email, password });
+      return { success: true };
+    } catch (error) {
+      return { success: false, message: error.message || 'Registration failed.' };
     }
-
-    const passwordHash = await hashPassword(password);
-    const newUser = { 
-      name, 
-      email, 
-      phone, 
-      passwordHash 
-    };
-    registeredUsers.push(newUser);
-    localStorage.setItem('registered_users', JSON.stringify(registeredUsers));
-    return { success: true };
   };
 
   const logoutUser = () => {
@@ -104,12 +86,8 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     const updatedUser = { ...currentUser, ...updatedFields };
     setCurrentUser(updatedUser);
-    
-    // Update in registered users
-    const registeredUsers = JSON.parse(localStorage.getItem('registered_users') || '[]');
-    const updatedUsersList = registeredUsers.map(u => u.email === updatedUser.email ? updatedUser : u);
-    localStorage.setItem('registered_users', JSON.stringify(updatedUsersList));
   };
+
 
   // Alert Logging
   const logAlert = (alertType, riskLevel) => {

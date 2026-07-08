@@ -166,12 +166,12 @@ export const Login = () => {
       return;
     }
     setLoading(true);
-    const success = await loginUser(email.trim(), password.trim());
+    const res = await loginUser(email.trim(), password.trim());
     setLoading(false);
-    if (success) {
+    if (res.success) {
       navigate('/dashboard');
     } else {
-      setError('Invalid email or password. Please try again.');
+      setError(res.message);
     }
   };
 

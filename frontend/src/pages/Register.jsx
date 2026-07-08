@@ -164,8 +164,8 @@ export const Register = () => {
       setError('Please fill in all fields.');
       return;
     }
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters long.');
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters long.');
       return;
     }
     if (!agreed) {
@@ -272,7 +272,7 @@ export const Register = () => {
                 <span style={s.inputIcon}><Icons.Shield size={15} color="#94A3B8" /></span>
                 <input
                   id="reg-password" type={showPassword ? 'text' : 'password'}
-                  placeholder="Min. 6 characters"
+                  placeholder="Min. 8 characters"
                   value={password} onChange={e => setPassword(e.target.value)}
                   style={{...s.input, paddingRight:'3rem'}} required
                 />

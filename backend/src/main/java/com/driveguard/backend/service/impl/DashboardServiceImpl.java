@@ -18,7 +18,6 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
-@SuppressWarnings("null")
 public class DashboardServiceImpl implements DashboardService {
 
     private final AlertRepository alertRepository;
@@ -65,3 +64,4 @@ public class DashboardServiceImpl implements DashboardService {
                 .build();
     }
 }
+
