@@ -62,5 +62,8 @@ export const api = {
   }),
   getAlerts: () => apiCall('/alerts', {
     method: 'GET',
+  }),
+  getAlertById: (id) => apiCall(`/alerts/${id}`, {
+    method: 'GET',
   })
 };

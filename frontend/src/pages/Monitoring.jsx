@@ -21,6 +21,15 @@ export const Monitoring = () => {
   const [eyeState, setEyeState] = useState('Open & Tracking');
   const [cameraError, setCameraError] = useState(null);
 
+  // ── AI-Ready State Variables (placeholders for future Python/AI integration) ──
+  const [cameraConnected, setCameraConnected] = useState(false);
+  const [faceDetected, setFaceDetected] = useState(false);
+  const [driverStatus, setDriverStatus] = useState('NOT_STARTED');
+  const [eyeAspectRatio, setEyeAspectRatio] = useState(0.0);
+  const [confidence, setConfidence] = useState(0);
+  const [blinkCount, setBlinkCount] = useState(0);
+  const [yawnCount, setYawnCount] = useState(0);
+
   // Initialize webcam
   const startCamera = async () => {
     setCameraError(null);
@@ -34,10 +43,15 @@ export const Monitoring = () => {
         videoRef.current.play().catch(err => console.warn('Video play interrupted:', err));
       }
       setIsMonitoring(true);
+      // AI-ready: update placeholder states
+      setCameraConnected(true);
+      setDriverStatus('AWAKE');
     } catch (err) {
       console.warn('Webcam access error:', err);
       setCameraError('Webcam not detected or permission denied. Starting simulation fallback stream.');
       setIsMonitoring(true); // fall back to simulation screen
+      setCameraConnected(false);
+      setDriverStatus('AWAKE');
     }
   };
 
@@ -53,6 +67,14 @@ export const Monitoring = () => {
     setSimMode('Normal');
     setFatigueScore(15);
     setEyeState('Open & Tracking');
+    // AI-ready: reset placeholder states
+    setCameraConnected(false);
+    setFaceDetected(false);
+    setDriverStatus('NOT_STARTED');
+    setEyeAspectRatio(0.0);
+    setConfidence(0);
+    setBlinkCount(0);
+    setYawnCount(0);
   };
 
   // Telemetry loop for canvas HUD overlays
@@ -84,6 +106,11 @@ export const Monitoring = () => {
         localFatigue = Math.min(100, localFatigue + 0.8);
         setFatigueScore(Math.round(localFatigue));
         setEyeState('CLOSED (Micro-sleep Detected)');
+        // AI-ready: simulate drowsy values
+        setFaceDetected(true);
+        setDriverStatus('DROWSY');
+        setEyeAspectRatio(0.08);
+        setConfidence(96.5);
 
         // Log critical alert if threshold exceeded
         if (localFatigue >= 78 && !activeAlert) {
@@ -93,6 +120,12 @@ export const Monitoring = () => {
         localFatigue = Math.min(75, localFatigue + 0.5);
         setFatigueScore(Math.round(localFatigue));
         setEyeState('BLINKING IRREGULAR (Yawning)');
+        // AI-ready: simulate distracted values
+        setFaceDetected(true);
+        setDriverStatus('YAWNING');
+        setEyeAspectRatio(0.22);
+        setConfidence(74.0);
+        setYawnCount(prev => prev + 1);
 
         // Log medium warning if threshold exceeded
         if (localFatigue >= 60 && !activeAlert) {
@@ -103,6 +136,12 @@ export const Monitoring = () => {
         localFatigue = Math.max(12, localFatigue - 1.2);
         setFatigueScore(Math.round(localFatigue));
         setEyeState('Open & Tracking');
+        // AI-ready: simulate normal values
+        setFaceDetected(true);
+        setDriverStatus('AWAKE');
+        setEyeAspectRatio(0.29);
+        setConfidence(98.8);
+        setBlinkCount(prev => prev + 1);
       }
 
       // DRAW HUD OVERLAYS
@@ -336,6 +375,55 @@ export const Monitoring = () => {
                   }} />
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* AI Telemetry Panel (placeholder values for future Python integration) */}
+          <div className="card">
+            <h3 className="card-title">AI Telemetry</h3>
+            <div style={styles.metricList}>
+              <div style={styles.telemetryItem}>
+                <span style={styles.telemetryLabel}>Camera Status</span>
+                <span className={`badge ${cameraConnected ? 'badge-success' : 'badge-info'}`}>
+                  {cameraConnected ? 'CONNECTED' : 'DISCONNECTED'}
+                </span>
+              </div>
+              <div style={styles.telemetryItem}>
+                <span style={styles.telemetryLabel}>Face Detection</span>
+                <span className={`badge ${faceDetected ? 'badge-success' : 'badge-warning'}`}>
+                  {faceDetected ? 'DETECTED' : 'NOT DETECTED'}
+                </span>
+              </div>
+              <div style={styles.telemetryItem}>
+                <span style={styles.telemetryLabel}>Driver Status</span>
+                <span style={{ fontWeight: '700', fontSize: '0.85rem', color: driverStatus === 'DROWSY' ? 'var(--danger)' : driverStatus === 'YAWNING' ? 'var(--warning)' : 'var(--text-main)' }}>
+                  {driverStatus}
+                </span>
+              </div>
+              <div style={styles.telemetryItem}>
+                <span style={styles.telemetryLabel}>Eye Aspect Ratio (EAR)</span>
+                <span style={{ fontWeight: '700', fontSize: '0.85rem', color: eyeAspectRatio < 0.2 && isMonitoring ? 'var(--danger)' : 'var(--text-main)' }}>
+                  {isMonitoring ? eyeAspectRatio.toFixed(2) : '0.00'}
+                </span>
+              </div>
+              <div style={styles.telemetryItem}>
+                <span style={styles.telemetryLabel}>Confidence</span>
+                <span style={{ fontWeight: '700', fontSize: '0.85rem', color: 'var(--text-main)' }}>
+                  {isMonitoring ? `${confidence.toFixed(1)}%` : '0.0%'}
+                </span>
+              </div>
+              <div style={styles.telemetryItem}>
+                <span style={styles.telemetryLabel}>Blink Count</span>
+                <span style={{ fontWeight: '700', fontSize: '0.85rem', color: 'var(--text-main)' }}>
+                  {blinkCount}
+                </span>
+              </div>
+              <div style={styles.telemetryItem}>
+                <span style={styles.telemetryLabel}>Yawn Count</span>
+                <span style={{ fontWeight: '700', fontSize: '0.85rem', color: yawnCount > 3 ? 'var(--danger)' : 'var(--text-main)' }}>
+                  {yawnCount}
+                </span>
+              </div>
             </div>
           </div>
 

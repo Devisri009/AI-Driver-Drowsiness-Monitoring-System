@@ -8,6 +8,12 @@ export const AlertHistory = () => {
   const [error, setError] = useState('');
   const [riskFilter, setRiskFilter] = useState('All');
 
+  // Detail modal state
+  const [selectedAlert, setSelectedAlert] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
+  const [showModal, setShowModal] = useState(false);
+
   useEffect(() => {
     const fetchAlerts = async () => {
       try {
@@ -25,6 +31,27 @@ export const AlertHistory = () => {
   const filteredAlerts = alerts.filter(alert => {
     return riskFilter === 'All' || alert.severity === riskFilter;
   });
+
+  const handleRowClick = async (alertId) => {
+    setShowModal(true);
+    setSelectedAlert(null);
+    setDetailError('');
+    setDetailLoading(true);
+    try {
+      const data = await api.getAlertById(alertId);
+      setSelectedAlert(data);
+    } catch (err) {
+      setDetailError(err.message || 'Failed to load alert details.');
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setSelectedAlert(null);
+    setDetailError('');
+  };
 
   return (
     <div className="page-container">
@@ -94,7 +121,7 @@ export const AlertHistory = () => {
                   </thead>
                   <tbody>
                     {filteredAlerts.map((alert) => (
-                      <tr key={alert.id}>
+                      <tr key={alert.id} onClick={() => handleRowClick(alert.id)} style={{ cursor: 'pointer' }}>
                         <td style={{ fontWeight: '500' }}>
                           {new Date(alert.timestamp).toLocaleString(undefined, {
                             month: 'short',
@@ -129,6 +156,81 @@ export const AlertHistory = () => {
             )}
           </div>
         </>
+      )}
+
+      {/* Alert Detail Modal */}
+      {showModal && (
+        <div style={styles.overlay} onClick={closeModal}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <div style={styles.modalHeaderLeft}>
+                <div style={styles.modalIconBox}>
+                  <Icons.Alerts size={18} color="var(--primary)" />
+                </div>
+                <h3 style={styles.modalTitle}>Alert Details</h3>
+              </div>
+              <button onClick={closeModal} style={styles.modalClose}>
+                <Icons.Close size={18} color="#64748B" />
+              </button>
+            </div>
+
+            <div style={styles.modalBody}>
+              {/* Detail Loading */}
+              {detailLoading && (
+                <div style={styles.infoBanner}>
+                  <span>Loading alert details...</span>
+                </div>
+              )}
+
+              {/* Detail Error */}
+              {detailError && (
+                <div style={styles.errorBanner}>
+                  <Icons.Warning size={18} color="#b91c1c" />
+                  <span>{detailError}</span>
+                </div>
+              )}
+
+              {/* Detail Content */}
+              {!detailLoading && !detailError && selectedAlert && (
+                <div style={styles.detailGrid}>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>Alert Type</span>
+                    <span style={styles.detailValue}>{selectedAlert.alertType}</span>
+                  </div>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>Severity</span>
+                    <span className={`badge ${
+                      selectedAlert.severity === 'HIGH' ? 'badge-danger' :
+                      selectedAlert.severity === 'MEDIUM' ? 'badge-warning' : 'badge-success'
+                    }`}>
+                      {selectedAlert.severity}
+                    </span>
+                  </div>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>Driver Status</span>
+                    <span style={styles.detailValue}>{selectedAlert.driverStatus}</span>
+                  </div>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>Message</span>
+                    <span style={styles.detailValue}>{selectedAlert.message}</span>
+                  </div>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>Eye Aspect Ratio (EAR)</span>
+                    <span style={styles.detailValue}>{selectedAlert.eyeAspectRatio?.toFixed(4) ?? '—'}</span>
+                  </div>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>Confidence</span>
+                    <span style={styles.detailValue}>{selectedAlert.confidence != null ? `${selectedAlert.confidence}%` : '—'}</span>
+                  </div>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>Timestamp</span>
+                    <span style={styles.detailValue}>{new Date(selectedAlert.timestamp).toLocaleString()}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -199,6 +301,86 @@ const styles = {
   alertTypeSpan: {
     color: 'var(--text-main)',
     fontWeight: '600'
+  },
+  /* Modal styles */
+  overlay: {
+    position: 'fixed',
+    inset: 0,
+    backgroundColor: 'rgba(15,23,42,0.5)',
+    backdropFilter: 'blur(8px)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9999,
+    padding: '1rem'
+  },
+  modal: {
+    background: '#ffffff',
+    borderRadius: '16px',
+    width: '100%',
+    maxWidth: '520px',
+    boxShadow: '0 25px 60px rgba(0,0,0,0.15)',
+    overflow: 'hidden',
+    border: '1px solid rgba(226,232,240,0.8)'
+  },
+  modalHeader: {
+    padding: '1.25rem 1.5rem',
+    borderBottom: '1px solid #F1F5F9',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  modalHeaderLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.75rem'
+  },
+  modalIconBox: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '10px',
+    background: 'rgba(37,99,235,0.08)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  modalTitle: {
+    fontSize: '1.05rem',
+    fontWeight: '800',
+    color: '#0F172A',
+    margin: 0
+  },
+  modalClose: {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    padding: '4px'
+  },
+  modalBody: {
+    padding: '1.5rem'
+  },
+  detailGrid: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1rem'
+  },
+  detailRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '0.75rem 1rem',
+    backgroundColor: '#f8fafc',
+    borderRadius: '8px',
+    border: '1px solid #f1f5f9'
+  },
+  detailLabel: {
+    fontSize: '0.85rem',
+    fontWeight: '600',
+    color: 'var(--text-sub)'
+  },
+  detailValue: {
+    fontSize: '0.95rem',
+    fontWeight: '700',
+    color: 'var(--text-main)'
   }
 };
-
