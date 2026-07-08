@@ -8,4 +8,5 @@ import java.util.List;
 public interface AlertService {
     AlertResponse createAlert(String email, CreateAlertRequest request);
     List<AlertResponse> getAlerts(String email);
+    AlertResponse getAlertById(String email, Long id);
 }

@@ -54,6 +54,17 @@ public class AlertServiceImpl implements AlertService {
                 .collect(Collectors.toList());
     }
 
+    public AlertResponse getAlertById(String email, Long id) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + email));
+        Alert alert = alertRepository.findById(id)
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Alert not found"));
+        if (!alert.getUser().getId().equals(user.getId())) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Access denied");
+        }
+        return mapToAlertResponse(alert);
+    }
+
     private AlertResponse mapToAlertResponse(Alert alert) {
         return AlertResponse.builder()
                 .id(alert.getId())

@@ -33,6 +33,13 @@ public class AlertController {
         return ResponseEntity.ok(alerts);
     }
 
+    @GetMapping("/{id}")
+    public ResponseEntity<AlertResponse> getAlertById(@PathVariable Long id) {
+        String email = getAuthenticatedEmail();
+        AlertResponse alert = alertService.getAlertById(email, id);
+        return ResponseEntity.ok(alert);
+    }
+
     private String getAuthenticatedEmail() {
         Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         if (principal instanceof UserDetails) {
