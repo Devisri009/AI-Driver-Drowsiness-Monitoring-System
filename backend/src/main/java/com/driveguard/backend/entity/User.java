@@ -37,6 +37,8 @@ public class User {
 
     private String role;
 
+    private String phone;
+
     @Column(updatable = false)
     private LocalDateTime createdAt;
 
