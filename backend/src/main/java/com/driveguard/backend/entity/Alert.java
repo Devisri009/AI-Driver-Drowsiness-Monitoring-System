@@ -20,18 +20,26 @@ public class Alert {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private boolean eyeClosed;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private AlertType alertType;
 
-    private boolean yawnDetected;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Severity severity;
 
-    private boolean headTiltDetected;
+    private String message;
 
-    private double confidenceScore;
+    private double eyeAspectRatio;
 
-    private String alertStatus;
+    private Double confidence;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private DriverStatus driverStatus;
 
     @Column(updatable = false)
-    private LocalDateTime alertTime;
+    private LocalDateTime timestamp;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
@@ -39,6 +47,6 @@ public class Alert {
 
     @PrePersist
     protected void onCreate() {
-        this.alertTime = LocalDateTime.now();
+        this.timestamp = LocalDateTime.now();
     }
 }
