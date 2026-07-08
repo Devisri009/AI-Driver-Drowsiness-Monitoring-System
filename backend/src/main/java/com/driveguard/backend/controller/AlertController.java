@@ -10,6 +10,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/alerts")
 @RequiredArgsConstructor
@@ -19,15 +21,23 @@ public class AlertController {
 
     @PostMapping
     public ResponseEntity<AlertResponse> createAlert(@RequestBody CreateAlertRequest request) {
-        Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        String email;
-        if (principal instanceof UserDetails) {
-            email = ((UserDetails) principal).getUsername();
-        } else {
-            email = principal.toString();
-        }
-
+        String email = getAuthenticatedEmail();
         AlertResponse response = alertService.createAlert(email, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @GetMapping
+    public ResponseEntity<List<AlertResponse>> getAlerts() {
+        String email = getAuthenticatedEmail();
+        List<AlertResponse> alerts = alertService.getAlerts(email);
+        return ResponseEntity.ok(alerts);
+    }
+
+    private String getAuthenticatedEmail() {
+        Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        if (principal instanceof UserDetails) {
+            return ((UserDetails) principal).getUsername();
+        }
+        return principal.toString();
     }
 }

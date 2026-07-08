@@ -11,6 +11,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
 @Service
 @RequiredArgsConstructor
 @SuppressWarnings("null")
@@ -36,15 +39,31 @@ public class AlertServiceImpl implements AlertService {
 
         Alert savedAlert = alertRepository.save(alert);
 
+        return mapToAlertResponse(savedAlert);
+    }
+
+    @Override
+    public List<AlertResponse> getAlerts(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + email));
+
+        List<Alert> alerts = alertRepository.findByUserOrderByTimestampDesc(user);
+
+        return alerts.stream()
+                .map(this::mapToAlertResponse)
+                .collect(Collectors.toList());
+    }
+
+    private AlertResponse mapToAlertResponse(Alert alert) {
         return AlertResponse.builder()
-                .id(savedAlert.getId())
-                .alertType(savedAlert.getAlertType())
-                .severity(savedAlert.getSeverity())
-                .message(savedAlert.getMessage())
-                .eyeAspectRatio(savedAlert.getEyeAspectRatio())
-                .confidence(savedAlert.getConfidence())
-                .driverStatus(savedAlert.getDriverStatus())
-                .timestamp(savedAlert.getTimestamp())
+                .id(alert.getId())
+                .alertType(alert.getAlertType())
+                .severity(alert.getSeverity())
+                .message(alert.getMessage())
+                .eyeAspectRatio(alert.getEyeAspectRatio())
+                .confidence(alert.getConfidence())
+                .driverStatus(alert.getDriverStatus())
+                .timestamp(alert.getTimestamp())
                 .build();
     }
 }

@@ -10,4 +10,5 @@ import java.util.List;
 @Repository
 public interface AlertRepository extends JpaRepository<Alert, Long> {
     List<Alert> findByUser(User user);
+    List<Alert> findByUserOrderByTimestampDesc(User user);
 }
