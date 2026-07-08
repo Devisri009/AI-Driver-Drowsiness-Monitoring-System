@@ -36,7 +36,7 @@ public class UserController {
     }
 
     @PutMapping("/profile")
-    public ResponseEntity<ProfileResponse> updateProfile(@RequestBody UpdateProfileRequest request) {
+    public ResponseEntity<ProfileResponse> updateProfile(@jakarta.validation.Valid @RequestBody UpdateProfileRequest request) {
         Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         String email;
         if (principal instanceof UserDetails) {

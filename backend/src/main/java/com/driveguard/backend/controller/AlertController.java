@@ -20,7 +20,7 @@ public class AlertController {
     private final AlertService alertService;
 
     @PostMapping
-    public ResponseEntity<AlertResponse> createAlert(@RequestBody CreateAlertRequest request) {
+    public ResponseEntity<AlertResponse> createAlert(@jakarta.validation.Valid @RequestBody CreateAlertRequest request) {
         String email = getAuthenticatedEmail();
         AlertResponse response = alertService.createAlert(email, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);

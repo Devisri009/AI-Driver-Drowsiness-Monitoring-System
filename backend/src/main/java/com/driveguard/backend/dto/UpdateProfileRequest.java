@@ -10,6 +10,9 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class UpdateProfileRequest {
+    @jakarta.validation.constraints.NotBlank(message = "Name must not be blank")
     private String name;
+    
+    @jakarta.validation.constraints.Pattern(regexp = "^\\+?[1-9]\\d{1,14}$", message = "Phone number is invalid")
     private String phone;
 }
