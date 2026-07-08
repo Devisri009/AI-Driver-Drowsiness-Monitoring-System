@@ -6,6 +6,7 @@ import com.driveguard.backend.dto.RegisterRequest;
 import com.driveguard.backend.entity.User;
 import com.driveguard.backend.repository.UserRepository;
 import com.driveguard.backend.service.AuthenticationService;
+import com.driveguard.backend.security.JwtService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -14,10 +15,12 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
+@SuppressWarnings("null")
 public class AuthenticationServiceImpl implements AuthenticationService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
 
     @Override
     public AuthenticationResponse register(RegisterRequest request) {
@@ -63,9 +66,11 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                     .build();
         }
 
+        String jwtToken = jwtService.generateToken(user.getEmail());
+
         return AuthenticationResponse.builder()
                 .message("Login successful")
-                .token(null) // Token generation not implemented yet
+                .token(jwtToken)
                 .build();
     }
 }
