@@ -1,5 +1,6 @@
 import cv2
 import mediapipe as mp
+from utils.eye_landmarks import LEFT_EYE_INDICES, RIGHT_EYE_INDICES
 
 class FaceDetector:
     def __init__(self, min_detection_confidence=0.5, min_tracking_confidence=0.5):
@@ -17,13 +18,17 @@ class FaceDetector:
         """
         Processes the input frame to detect a face.
         If detected, draws the Face Mesh landmarks on the frame.
-        Adds status text ("Face Detected" in green or "No Face Detected" in red) on the frame.
+        Extracts and highlights left and right eye landmarks.
+        Adds status text ("Face Detected", "Left Eye Detected", "Right Eye Detected" in green,
+        or "No Face Detected" in red) on the frame.
         """
         # Convert BGR frame to RGB for MediaPipe
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.face_mesh.process(rgb_frame)
 
         face_detected = False
+        left_eye_detected = False
+        right_eye_detected = False
 
         if results.multi_face_landmarks:
             face_detected = True
@@ -55,6 +60,26 @@ class FaceDetector:
                     connection_drawing_spec=self.mp_drawing_styles.get_default_face_mesh_iris_connections_style()
                 )
 
+                # 4. Highlight left and right eye landmarks with green circles
+                h, w, _ = frame.shape
+                try:
+                    for idx in LEFT_EYE_INDICES:
+                        landmark = face_landmarks.landmark[idx]
+                        cx, cy = int(landmark.x * w), int(landmark.y * h)
+                        cv2.circle(frame, (cx, cy), 2, (0, 255, 0), -1)
+                    left_eye_detected = True
+                except IndexError:
+                    left_eye_detected = False
+
+                try:
+                    for idx in RIGHT_EYE_INDICES:
+                        landmark = face_landmarks.landmark[idx]
+                        cx, cy = int(landmark.x * w), int(landmark.y * h)
+                        cv2.circle(frame, (cx, cy), 2, (0, 255, 0), -1)
+                    right_eye_detected = True
+                except IndexError:
+                    right_eye_detected = False
+
         # Draw status text
         if face_detected:
             cv2.putText(
@@ -67,6 +92,28 @@ class FaceDetector:
                 2, 
                 cv2.LINE_AA
             )
+            if left_eye_detected:
+                cv2.putText(
+                    frame, 
+                    "Left Eye Detected", 
+                    (30, 90), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 
+                    1.0, 
+                    (0, 255, 0), 
+                    2, 
+                    cv2.LINE_AA
+                )
+            if right_eye_detected:
+                cv2.putText(
+                    frame, 
+                    "Right Eye Detected", 
+                    (30, 130), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 
+                    1.0, 
+                    (0, 255, 0), 
+                    2, 
+                    cv2.LINE_AA
+                )
         else:
             cv2.putText(
                 frame, 
