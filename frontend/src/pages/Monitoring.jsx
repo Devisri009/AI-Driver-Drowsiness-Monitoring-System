@@ -1,6 +1,9 @@
-import React, { useContext, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { AppContext } from '../context/AppContext';
 import { Icons } from '../components/Icons';
+import { api } from '../api/api';
+
+const AI_STREAM_URL = 'http://127.0.0.1:5001/video_feed';
 
 export const Monitoring = () => {
   const {
@@ -16,19 +19,90 @@ export const Monitoring = () => {
   const animationRef = useRef(null);
   const streamRef = useRef(null);
 
+  // ── AI MJPEG Stream State ──
+  const [streamAvailable, setStreamAvailable] = useState(false);
+  const [streamLoading, setStreamLoading] = useState(true);
+  const retryTimerRef = useRef(null);
+
   const [simMode, setSimMode] = useState('Normal'); // 'Normal', 'Drowsy', 'Distracted'
   const [fatigueScore, setFatigueScore] = useState(15); // percentage (0 - 100)
   const [eyeState, setEyeState] = useState('Open & Tracking');
   const [cameraError, setCameraError] = useState(null);
 
-  // ── AI-Ready State Variables (placeholders for future Python/AI integration) ──
-  const [cameraConnected, setCameraConnected] = useState(false);
-  const [faceDetected, setFaceDetected] = useState(false);
-  const [driverStatus, setDriverStatus] = useState('NOT_STARTED');
-  const [eyeAspectRatio, setEyeAspectRatio] = useState(0.0);
-  const [confidence, setConfidence] = useState(0);
-  const [blinkCount, setBlinkCount] = useState(0);
-  const [yawnCount, setYawnCount] = useState(0);
+  // ── Live Backend Monitoring State ──
+  const [liveData, setLiveData] = useState(null);
+  const [isLiveLoading, setIsLiveLoading] = useState(true);
+  const [liveError, setLiveError] = useState(null);
+
+  useEffect(() => {
+    let intervalId;
+    let isMounted = true;
+
+    const fetchLiveMonitoring = async () => {
+      try {
+        const data = await api.getLiveMonitoring();
+        if (isMounted) {
+          setLiveData(data);
+          setLiveError(null);
+          setIsLiveLoading(false);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setLiveError(err.message || 'Failed to fetch live monitoring data');
+          setIsLiveLoading(false);
+        }
+      }
+    };
+
+    setIsLiveLoading(true);
+    fetchLiveMonitoring();
+    intervalId = setInterval(fetchLiveMonitoring, 2000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
+  }, []);
+
+  // ── AI MJPEG Stream availability probe ──
+  // Polls the /video_feed endpoint via a HEAD request every 3 s until
+  // the stream is reachable, then stops polling. If the stream drops,
+  // the img onError handler re-starts the probe so we auto-recover.
+  const probeStream = useCallback(() => {
+    setStreamLoading(true);
+    fetch(AI_STREAM_URL, { method: 'HEAD', cache: 'no-store' })
+      .then(() => {
+        setStreamAvailable(true);
+        setStreamLoading(false);
+      })
+      .catch(() => {
+        setStreamAvailable(false);
+        setStreamLoading(false);
+        // Schedule next retry in 3 s
+        retryTimerRef.current = setTimeout(probeStream, 3000);
+      });
+  }, []);
+
+  useEffect(() => {
+    probeStream();
+    return () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
+  }, [probeStream]);
+
+  // Called by the <img> element when the MJPEG stream breaks mid-session
+  const handleStreamError = useCallback(() => {
+    setStreamAvailable(false);
+    setStreamLoading(true);
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = setTimeout(probeStream, 3000);
+  }, [probeStream]);
+
+  // Called when the <img> successfully loads the first frame
+  const handleStreamLoad = useCallback(() => {
+    setStreamAvailable(true);
+    setStreamLoading(false);
+  }, []);
 
   // Initialize webcam
   const startCamera = async () => {
@@ -43,15 +117,10 @@ export const Monitoring = () => {
         videoRef.current.play().catch(err => console.warn('Video play interrupted:', err));
       }
       setIsMonitoring(true);
-      // AI-ready: update placeholder states
-      setCameraConnected(true);
-      setDriverStatus('AWAKE');
     } catch (err) {
       console.warn('Webcam access error:', err);
       setCameraError('Webcam not detected or permission denied. Starting simulation fallback stream.');
       setIsMonitoring(true); // fall back to simulation screen
-      setCameraConnected(false);
-      setDriverStatus('AWAKE');
     }
   };
 
@@ -67,14 +136,6 @@ export const Monitoring = () => {
     setSimMode('Normal');
     setFatigueScore(15);
     setEyeState('Open & Tracking');
-    // AI-ready: reset placeholder states
-    setCameraConnected(false);
-    setFaceDetected(false);
-    setDriverStatus('NOT_STARTED');
-    setEyeAspectRatio(0.0);
-    setConfidence(0);
-    setBlinkCount(0);
-    setYawnCount(0);
   };
 
   // Telemetry loop for canvas HUD overlays
@@ -106,11 +167,6 @@ export const Monitoring = () => {
         localFatigue = Math.min(100, localFatigue + 0.8);
         setFatigueScore(Math.round(localFatigue));
         setEyeState('CLOSED (Micro-sleep Detected)');
-        // AI-ready: simulate drowsy values
-        setFaceDetected(true);
-        setDriverStatus('DROWSY');
-        setEyeAspectRatio(0.08);
-        setConfidence(96.5);
 
         // Log critical alert if threshold exceeded
         if (localFatigue >= 78 && !activeAlert) {
@@ -120,12 +176,6 @@ export const Monitoring = () => {
         localFatigue = Math.min(75, localFatigue + 0.5);
         setFatigueScore(Math.round(localFatigue));
         setEyeState('BLINKING IRREGULAR (Yawning)');
-        // AI-ready: simulate distracted values
-        setFaceDetected(true);
-        setDriverStatus('YAWNING');
-        setEyeAspectRatio(0.22);
-        setConfidence(74.0);
-        setYawnCount(prev => prev + 1);
 
         // Log medium warning if threshold exceeded
         if (localFatigue >= 60 && !activeAlert) {
@@ -136,12 +186,6 @@ export const Monitoring = () => {
         localFatigue = Math.max(12, localFatigue - 1.2);
         setFatigueScore(Math.round(localFatigue));
         setEyeState('Open & Tracking');
-        // AI-ready: simulate normal values
-        setFaceDetected(true);
-        setDriverStatus('AWAKE');
-        setEyeAspectRatio(0.29);
-        setConfidence(98.8);
-        setBlinkCount(prev => prev + 1);
       }
 
       // DRAW HUD OVERLAYS
@@ -269,68 +313,56 @@ export const Monitoring = () => {
       </div>
 
       <div className="grid-cols-3">
-        {/* Live Stream Panel (Span 2) */}
+        {/* Live AI Camera Panel (Span 2) */}
         <div className="card" style={{ ...styles.gridCol2, padding: '1.25rem' }}>
           <div style={styles.streamContainer}>
-            {isMonitoring ? (
-              <div style={styles.videoWrapper}>
-                {/* Fallback pattern backdrops when webcams fail or are denied */}
-                {cameraError ? (
-                  <div style={styles.cameraPlaceholder}>
-                    <div style={styles.placeholderBackgroundLines} />
-                    <div style={styles.faceTargetOutline} />
-                    <span style={styles.placeholderText}>SIMULATED CAMERA STREAM (NO LOCAL MEDIA DETECTED)</span>
-                  </div>
-                ) : (
-                  <video
-                    ref={videoRef}
-                    style={styles.video}
-                    muted
-                    playsInline
-                    autoPlay
-                  />
-                )}
-                {/* HUD Overlay Canvas */}
-                <canvas
-                  ref={canvasRef}
-                  width={640}
-                  height={480}
-                  style={styles.canvas}
-                />
+            {/* Loading pulse while probing the stream */}
+            {streamLoading && (
+              <div style={styles.streamOverlay}>
+                <div style={styles.streamSpinner} />
+                <span style={styles.streamOverlayText}>Connecting to AI Camera...</span>
               </div>
-            ) : (
-              <div style={styles.emptyMonitor}>
-                <Icons.Monitor size={56} color="var(--border)" />
-                <h3 style={{ marginTop: '1.25rem', fontWeight: '700', color: 'var(--text-main)' }}>Ready to Drive?</h3>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-sub)', maxWidth: '400px', margin: '0.5rem auto 1.5rem', lineHeight: '1.5' }}>
-                  Click Start Monitoring below to enable the AI webcam tracking. DriveGuard will continuously monitor your alertness to keep you safe.
-                </p>
-                <button className="btn btn-primary" onClick={startCamera} style={{ padding: '0.875rem 1.5rem', fontSize: '1rem', borderRadius: '8px' }}>
-                  <Icons.Eye size={20} color="#ffffff" />
-                  <span>Start Monitoring</span>
-                </button>
+            )}
+
+            {/* Fallback message when stream is confirmed unavailable */}
+            {!streamLoading && !streamAvailable && (
+              <div style={styles.streamUnavailable}>
+                <Icons.Monitor size={48} color="rgba(255,255,255,0.3)" />
+                <span style={styles.streamUnavailableText}>Waiting for AI Camera...</span>
+                <span style={styles.streamUnavailableHint}>Start the Python AI module to see the live feed.</span>
               </div>
+            )}
+
+            {/* MJPEG live stream — rendered as a standard <img> */}
+            {streamAvailable && (
+              <img
+                src={`${AI_STREAM_URL}?t=${Date.now()}`}
+                alt="AI live camera feed"
+                style={{
+                  ...styles.mjpegImg,
+                  display: streamAvailable ? 'block' : 'none'
+                }}
+                onLoad={handleStreamLoad}
+                onError={handleStreamError}
+              />
             )}
           </div>
 
-          {/* Action Row */}
-          {isMonitoring && (
-            <div style={styles.monitorControlBar}>
-              <button className="btn btn-danger" onClick={stopCamera}>
-                <Icons.Close size={18} color="#ffffff" />
-                <span>Stop Monitoring</span>
-              </button>
-              
-              <div style={styles.indicatorPills}>
-                <span style={styles.operatorPill}>
-                  Status: <strong>Active</strong>
-                </span>
-                <span style={styles.resolutionPill}>
-                  Tracking Real-time
-                </span>
-              </div>
+          {/* Status Bar */}
+          <div style={styles.monitorControlBar}>
+            <div style={styles.indicatorPills}>
+              <span style={{
+                ...styles.operatorPill,
+                borderColor: streamAvailable ? 'rgba(16,185,129,0.4)' : 'var(--border)'
+              }}>
+                AI Camera:&nbsp;
+                <strong style={{ color: streamAvailable ? 'var(--success)' : 'var(--text-sub)' }}>
+                  {streamLoading ? 'Connecting…' : streamAvailable ? 'Live' : 'Offline'}
+                </strong>
+              </span>
+              <span style={styles.resolutionPill}>Real-time AI Analysis</span>
             </div>
-          )}
+          </div>
         </div>
 
         {/* Configurations panel */}
@@ -378,53 +410,68 @@ export const Monitoring = () => {
             </div>
           </div>
 
-          {/* AI Telemetry Panel (placeholder values for future Python integration) */}
+          {/* Live Backend Monitoring Panel */}
           <div className="card">
-            <h3 className="card-title">AI Telemetry</h3>
-            <div style={styles.metricList}>
-              <div style={styles.telemetryItem}>
-                <span style={styles.telemetryLabel}>Camera Status</span>
-                <span className={`badge ${cameraConnected ? 'badge-success' : 'badge-info'}`}>
-                  {cameraConnected ? 'CONNECTED' : 'DISCONNECTED'}
-                </span>
+            <h3 className="card-title">Live Monitoring Data</h3>
+            {isLiveLoading && !liveData ? (
+              <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-sub)' }}>
+                <div>Loading monitoring data...</div>
               </div>
-              <div style={styles.telemetryItem}>
-                <span style={styles.telemetryLabel}>Face Detection</span>
-                <span className={`badge ${faceDetected ? 'badge-success' : 'badge-warning'}`}>
-                  {faceDetected ? 'DETECTED' : 'NOT DETECTED'}
-                </span>
+            ) : liveError ? (
+              <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--danger)', backgroundColor: 'var(--danger-light)', borderRadius: '8px' }}>
+                <Icons.Warning size={24} color="var(--danger)" style={{ margin: '0 auto 0.5rem' }} />
+                <div>{liveError}</div>
               </div>
-              <div style={styles.telemetryItem}>
-                <span style={styles.telemetryLabel}>Driver Status</span>
-                <span style={{ fontWeight: '700', fontSize: '0.85rem', color: driverStatus === 'DROWSY' ? 'var(--danger)' : driverStatus === 'YAWNING' ? 'var(--warning)' : 'var(--text-main)' }}>
-                  {driverStatus}
-                </span>
+            ) : (!liveData || !liveData.driverStatus) ? (
+              <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-sub)' }}>
+                <div>No live monitoring data available.</div>
               </div>
-              <div style={styles.telemetryItem}>
-                <span style={styles.telemetryLabel}>Eye Aspect Ratio (EAR)</span>
-                <span style={{ fontWeight: '700', fontSize: '0.85rem', color: eyeAspectRatio < 0.2 && isMonitoring ? 'var(--danger)' : 'var(--text-main)' }}>
-                  {isMonitoring ? eyeAspectRatio.toFixed(2) : '0.00'}
-                </span>
+            ) : (
+              <div style={styles.metricList}>
+                <div style={styles.telemetryItem}>
+                  <span style={styles.telemetryLabel}>Driver Status</span>
+                  <span style={{ fontWeight: '700', fontSize: '0.85rem', color: liveData.driverStatus === 'DROWSY' || liveData.driverStatus === 'SLEEPING' ? 'var(--danger)' : liveData.driverStatus === 'YAWNING' || liveData.driverStatus === 'DISTRACTED' ? 'var(--warning)' : 'var(--text-main)' }}>
+                    {liveData.driverStatus}
+                  </span>
+                </div>
+                <div style={styles.telemetryItem}>
+                  <span style={styles.telemetryLabel}>EAR</span>
+                  <span style={{ fontWeight: '700', fontSize: '0.85rem' }}>
+                    {liveData.ear != null ? liveData.ear.toFixed(2) : 'N/A'}
+                  </span>
+                </div>
+                <div style={styles.telemetryItem}>
+                  <span style={styles.telemetryLabel}>MAR</span>
+                  <span style={{ fontWeight: '700', fontSize: '0.85rem' }}>
+                    {liveData.mar != null ? liveData.mar.toFixed(2) : 'N/A'}
+                  </span>
+                </div>
+                <div style={styles.telemetryItem}>
+                  <span style={styles.telemetryLabel}>Blink Count</span>
+                  <span style={{ fontWeight: '700', fontSize: '0.85rem' }}>
+                    {liveData.blinkCount != null ? liveData.blinkCount : 'N/A'}
+                  </span>
+                </div>
+                <div style={styles.telemetryItem}>
+                  <span style={styles.telemetryLabel}>Yawn Count</span>
+                  <span style={{ fontWeight: '700', fontSize: '0.85rem' }}>
+                    {liveData.yawnCount != null ? liveData.yawnCount : 'N/A'}
+                  </span>
+                </div>
+                <div style={styles.telemetryItem}>
+                  <span style={styles.telemetryLabel}>Alarm Status</span>
+                  <span className={`badge ${liveData.alarmStatus === 'ON' ? 'badge-danger' : 'badge-success'}`}>
+                    {liveData.alarmStatus || 'N/A'}
+                  </span>
+                </div>
+                <div style={styles.telemetryItem}>
+                  <span style={styles.telemetryLabel}>Last Updated</span>
+                  <span style={{ fontWeight: '700', fontSize: '0.85rem' }}>
+                    {liveData.lastUpdated ? new Date(liveData.lastUpdated).toLocaleString() : 'N/A'}
+                  </span>
+                </div>
               </div>
-              <div style={styles.telemetryItem}>
-                <span style={styles.telemetryLabel}>Confidence</span>
-                <span style={{ fontWeight: '700', fontSize: '0.85rem', color: 'var(--text-main)' }}>
-                  {isMonitoring ? `${confidence.toFixed(1)}%` : '0.0%'}
-                </span>
-              </div>
-              <div style={styles.telemetryItem}>
-                <span style={styles.telemetryLabel}>Blink Count</span>
-                <span style={{ fontWeight: '700', fontSize: '0.85rem', color: 'var(--text-main)' }}>
-                  {blinkCount}
-                </span>
-              </div>
-              <div style={styles.telemetryItem}>
-                <span style={styles.telemetryLabel}>Yawn Count</span>
-                <span style={{ fontWeight: '700', fontSize: '0.85rem', color: yawnCount > 3 ? 'var(--danger)' : 'var(--text-main)' }}>
-                  {yawnCount}
-                </span>
-              </div>
-            </div>
+            )}
           </div>
 
           {/* Simulator Panel for Demonstration */}
@@ -508,6 +555,61 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: '450px'
+  },
+  // Responsive MJPEG stream image
+  mjpegImg: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'contain',
+    display: 'block',
+    borderRadius: '12px'
+  },
+  // Overlay shown while probing connectivity
+  streamOverlay: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '1rem',
+    width: '100%',
+    minHeight: '450px'
+  },
+  streamSpinner: {
+    width: '40px',
+    height: '40px',
+    border: '3px solid rgba(255,255,255,0.12)',
+    borderTopColor: 'var(--primary)',
+    borderRadius: '50%',
+    animation: 'spin 0.9s linear infinite'
+  },
+  streamOverlayText: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: '0.85rem',
+    fontWeight: '600',
+    fontFamily: 'monospace',
+    letterSpacing: '0.05em'
+  },
+  // Shown when stream is confirmed offline
+  streamUnavailable: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0.75rem',
+    width: '100%',
+    minHeight: '450px'
+  },
+  streamUnavailableText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: '1rem',
+    fontWeight: '700',
+    fontFamily: 'monospace',
+    letterSpacing: '0.05em'
+  },
+  streamUnavailableHint: {
+    color: 'rgba(255,255,255,0.3)',
+    fontSize: '0.78rem',
+    fontWeight: '500'
   },
   videoWrapper: {
     width: '100%',

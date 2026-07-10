@@ -1,8 +1,12 @@
 import cv2
 import mediapipe as mp
-from config import EAR_THRESHOLD, DROWSY_CONSECUTIVE_FRAMES, SLEEPING_CONSECUTIVE_FRAMES
-from utils.face_landmarks import LEFT_EYE_INDICES, RIGHT_EYE_INDICES, LEFT_EYE_EAR_INDICES, RIGHT_EYE_EAR_INDICES, MOUTH_INDICES
+from config import EAR_THRESHOLD, DROWSY_CONSECUTIVE_FRAMES, SLEEPING_CONSECUTIVE_FRAMES, YAWN_THRESHOLD, YAWN_CONSECUTIVE_FRAMES, ALARM_SOUND_PATH, BACKEND_API_URL, JWT_TOKEN
+from utils.face_landmarks import LEFT_EYE_INDICES, RIGHT_EYE_INDICES, LEFT_EYE_EAR_INDICES, RIGHT_EYE_EAR_INDICES, MOUTH_INDICES, MOUTH_MAR_INDICES
 from utils.ear import calculate_ear
+from utils.mar import calculate_mar
+from utils.alarm import AlarmPlayer
+from utils.api_client import BackendApiClient
+from utils.live_metrics_client import LiveMetricsClient
 
 class FaceDetector:
     def __init__(self, min_detection_confidence=0.5, min_tracking_confidence=0.5):
@@ -24,6 +28,19 @@ class FaceDetector:
         self.closed_eye_frames = 0
         self.driver_status = "ALERT"
 
+        # Yawn detection state
+        self.yawn_count = 0
+        self.mouth_open = False
+        self.open_mouth_frames = 0
+
+        # Alarm player initialization
+        self.alarm_player = AlarmPlayer(ALARM_SOUND_PATH)
+
+        # API client and status tracking initialization
+        self.api_client = BackendApiClient(BACKEND_API_URL, JWT_TOKEN)
+        self.live_metrics_client = LiveMetricsClient(BACKEND_API_URL, JWT_TOKEN)
+        self.prev_driver_status = "ALERT"
+
     def process(self, frame):
         """
         Processes the input frame to detect a face.
@@ -40,7 +57,8 @@ class FaceDetector:
         face_detected = False
         left_eye_detected = False
         right_eye_detected = False
-        average_ear = None
+        average_ear = 0.0
+        average_mar = 0.0
 
         if results.multi_face_landmarks:
             face_detected = True
@@ -102,6 +120,23 @@ class FaceDetector:
                     mouth_detected = True
                 except IndexError:
                     mouth_detected = False
+
+                # 4c. Extract MAR 8-point landmarks and calculate MAR
+                try:
+                    mouth_mar_pts = [face_landmarks.landmark[idx] for idx in MOUTH_MAR_INDICES]
+                    average_mar = calculate_mar(mouth_mar_pts)
+                except IndexError:
+                    average_mar = 0.0
+
+                # 4d. Yawn detection using MAR threshold and consecutive frame count
+                if average_mar is not None and average_mar > YAWN_THRESHOLD:
+                    self.open_mouth_frames += 1
+                    if self.open_mouth_frames >= YAWN_CONSECUTIVE_FRAMES and not self.mouth_open:
+                        self.yawn_count += 1
+                        self.mouth_open = True
+                else:
+                    self.open_mouth_frames = 0
+                    self.mouth_open = False
 
                 # 5. Extract specific EAR 6-point landmarks and calculate EAR for each eye
                 try:
@@ -219,6 +254,40 @@ class FaceDetector:
                         2,
                         cv2.LINE_AA
                     )
+                    if average_mar is not None:
+                        cv2.putText(
+                            frame,
+                            f"MAR: {average_mar:.2f}",
+                            (30, 330),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            1.0,
+                            (255, 0, 0),
+                            2,
+                            cv2.LINE_AA
+                        )
+                        cv2.putText(
+                            frame,
+                            f"Yawn Count: {self.yawn_count}",
+                            (30, 370),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            1.0,
+                            (255, 0, 0),
+                            2,
+                            cv2.LINE_AA
+                        )
+                        # Render Alarm status line below the Yawn Count
+                        alarm_text = "Alarm: ON" if self.alarm_player.is_playing() else "Alarm: OFF"
+                        alarm_color = (0, 0, 255) if self.alarm_player.is_playing() else (0, 255, 0) # Red (BGR) or Green (BGR)
+                        cv2.putText(
+                            frame,
+                            alarm_text,
+                            (30, 410),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            1.0,
+                            alarm_color,
+                            2,
+                            cv2.LINE_AA
+                        )
         else:
             cv2.putText(
                 frame, 
@@ -231,7 +300,58 @@ class FaceDetector:
                 cv2.LINE_AA
             )
 
+        # Control the alarm sound based on driver status
+        if self.driver_status in ["DROWSY", "SLEEPING"]:
+            self.alarm_player.start()
+        elif self.driver_status == "ALERT":
+            self.alarm_player.stop()
+
+        # Send alert to backend on specific status transitions
+        if self.prev_driver_status == "ALERT" and self.driver_status == "DROWSY":
+            try:
+                ear_val = average_ear if average_ear is not None else 0.0
+                self.api_client.send_alert(
+                    alert_type="DROWSINESS",
+                    severity="MEDIUM",
+                    driver_status="DROWSY",
+                    message="Drowsiness detected",
+                    eye_aspect_ratio=ear_val,
+                    confidence=100.0
+                )
+                print("[API] Sent Alert: DROWSY (Severity: MEDIUM)")
+            except Exception as e:
+                print(f"[API ERROR] Failed to send alert: {e}")
+        elif self.prev_driver_status == "DROWSY" and self.driver_status == "SLEEPING":
+            try:
+                ear_val = average_ear if average_ear is not None else 0.0
+                self.api_client.send_alert(
+                    alert_type="DROWSINESS",
+                    severity="HIGH",
+                    driver_status="SLEEPING",
+                    message="Driver sleeping detected",
+                    eye_aspect_ratio=ear_val,
+                    confidence=100.0
+                )
+                print("[API] Sent Alert: SLEEPING (Severity: HIGH)")
+            except Exception as e:
+                print(f"[API ERROR] Failed to send alert: {e}")
+
+        # Update previous status for next frame comparison
+        self.prev_driver_status = self.driver_status
+
+        # Send live metrics to backend every 2 seconds
+        alarm_status_str = "ON" if self.alarm_player.is_playing() else "OFF"
+        self.live_metrics_client.send_metrics(
+            driver_status=self.driver_status,
+            ear=average_ear if average_ear is not None else 0.0,
+            mar=average_mar if average_mar is not None else 0.0,
+            blink_count=self.blink_count,
+            yawn_count=self.yawn_count,
+            alarm_status=alarm_status_str
+        )
+
         return face_detected, frame
 
     def close(self):
         self.face_mesh.close()
+        self.alarm_player.stop()

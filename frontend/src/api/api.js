@@ -65,5 +65,8 @@ export const api = {
   }),
   getAlertById: (id) => apiCall(`/alerts/${id}`, {
     method: 'GET',
+  }),
+  getLiveMonitoring: () => apiCall('/monitoring/live', {
+    method: 'GET',
   })
 };
