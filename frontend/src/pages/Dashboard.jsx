@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { AppContext } from '../context/AppContext';
 import { api } from '../api/api';
 import { Icons } from '../components/Icons';
+import { DriverAnalytics } from '../components/DriverAnalytics';
 
 export const Dashboard = () => {
   const { isMonitoring, currentUser } = useContext(AppContext);
@@ -11,6 +12,11 @@ export const Dashboard = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // ── Alert history for analytics charts ──
+  const [alerts, setAlerts]               = useState([]);
+  const [alertsLoading, setAlertsLoading] = useState(true);
+  const [alertsError, setAlertsError]     = useState('');
 
   useEffect(() => {
     const fetchDashboard = async () => {
@@ -24,6 +30,34 @@ export const Dashboard = () => {
       }
     };
     fetchDashboard();
+  }, []);
+
+  // Fetch alerts once on mount then refresh every 30 s so charts stay current
+  useEffect(() => {
+    let isMounted = true;
+    let timerId;
+
+    const fetchAlerts = async () => {
+      try {
+        const data = await api.getAlerts();
+        if (isMounted) {
+          setAlerts(data);
+          setAlertsError('');
+        }
+      } catch (err) {
+        if (isMounted) setAlertsError(err.message || 'Failed to load analytics data.');
+      } finally {
+        if (isMounted) setAlertsLoading(false);
+      }
+    };
+
+    fetchAlerts();
+    timerId = setInterval(fetchAlerts, 30_000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(timerId);
+    };
   }, []);
 
   if (loading) {
@@ -216,6 +250,13 @@ export const Dashboard = () => {
           )}
         </div>
       </div>
+
+      {/* 5. Driver Analytics Section */}
+      <DriverAnalytics
+        alerts={alerts}
+        loading={alertsLoading}
+        error={alertsError}
+      />
 
     </div>
   );
