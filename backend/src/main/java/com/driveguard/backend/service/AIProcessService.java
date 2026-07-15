@@ -1,9 +1,13 @@
 package com.driveguard.backend.service;
 
+import com.driveguard.backend.entity.User;
+import com.driveguard.backend.repository.UserRepository;
+import com.driveguard.backend.security.JwtService;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -14,6 +18,10 @@ public class AIProcessService {
 
     private static final Logger logger = LoggerFactory.getLogger(AIProcessService.class);
 
+    private final UserRepository userRepository;
+    private final JwtService jwtService;
+    private final SessionTrackingService sessionTrackingService;
+
     @Value("${driveguard.ai.python}")
     private String pythonExecutable;
 
@@ -21,6 +29,13 @@ public class AIProcessService {
     private String aiProjectDir;
 
     private Process aiProcess;
+    private Long currentUserId;
+
+    public AIProcessService(UserRepository userRepository, JwtService jwtService, SessionTrackingService sessionTrackingService) {
+        this.userRepository = userRepository;
+        this.jwtService = jwtService;
+        this.sessionTrackingService = sessionTrackingService;
+    }
 
     public synchronized boolean isRunning() {
         if (aiProcess != null) {
@@ -28,6 +43,10 @@ public class AIProcessService {
                 return true;
             } else {
                 logger.warn("AI process has exited unexpectedly. Clearing process reference.");
+                if (currentUserId != null) {
+                    sessionTrackingService.endSession(currentUserId);
+                    currentUserId = null;
+                }
                 aiProcess = null; // Clear dead process reference
             }
         }
@@ -40,6 +59,11 @@ public class AIProcessService {
             return;
         }
 
+        String email = jwtService.extractUsername(jwtToken);
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + email));
+        this.currentUserId = user.getId();
+
         logger.info("Starting AI process using {} in {}", pythonExecutable, aiProjectDir);
         
         ProcessBuilder pb = new ProcessBuilder(pythonExecutable, "main.py", jwtToken);
@@ -50,6 +74,7 @@ public class AIProcessService {
 
         aiProcess = pb.start();
         logger.info("AI process started successfully with PID: {}", aiProcess.pid());
+        sessionTrackingService.startSession(currentUserId);
     }
 
     public synchronized void stopProcess() {
@@ -74,11 +99,20 @@ public class AIProcessService {
 
         aiProcess = null;
         logger.info("AI process stopped successfully.");
+
+        if (currentUserId != null) {
+            sessionTrackingService.endSession(currentUserId);
+            currentUserId = null;
+        }
     }
 
     @PreDestroy
     public void cleanupOnShutdown() {
         logger.info("Spring Boot is shutting down. Cleaning up AI process...");
+        if (currentUserId != null) {
+            sessionTrackingService.endSession(currentUserId);
+            currentUserId = null;
+        }
         stopProcess();
     }
 }

@@ -3,6 +3,8 @@ package com.driveguard.backend.controller;
 import com.driveguard.backend.model.LiveMetrics;
 import com.driveguard.backend.service.LiveMetricsService;
 import com.driveguard.backend.service.AIProcessService;
+import com.driveguard.backend.service.SessionTrackingService;
+import com.driveguard.backend.repository.UserRepository;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -20,6 +22,8 @@ public class MonitoringController {
 
     private final LiveMetricsService liveMetricsService;
     private final AIProcessService aiProcessService;
+    private final UserRepository userRepository;
+    private final SessionTrackingService sessionTrackingService;
 
     @PostMapping("/start")
     @Operation(summary = "Start AI monitoring process", description = "Launches the python AI process for monitoring")
@@ -44,6 +48,9 @@ public class MonitoringController {
     public ResponseEntity<Void> updateLiveMetrics(@RequestBody LiveMetrics metrics) {
         String email = getAuthenticatedEmail();
         liveMetricsService.updateMetrics(email, metrics);
+        userRepository.findByEmail(email).ifPresent(user -> 
+            sessionTrackingService.recordMetrics(user.getId(), metrics)
+        );
         return ResponseEntity.ok().build();
     }
 

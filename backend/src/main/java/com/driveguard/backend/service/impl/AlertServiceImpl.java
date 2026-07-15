@@ -21,6 +21,7 @@ public class AlertServiceImpl implements AlertService {
 
     private final AlertRepository alertRepository;
     private final UserRepository userRepository;
+    private final com.driveguard.backend.service.SessionTrackingService sessionTrackingService;
 
     @Override
     public AlertResponse createAlert(String email, CreateAlertRequest request) {
@@ -38,6 +39,8 @@ public class AlertServiceImpl implements AlertService {
                 .build();
 
         Alert savedAlert = alertRepository.save(alert);
+
+        sessionTrackingService.recordAlert(user.getId(), request.getSeverity());
 
         return mapToAlertResponse(savedAlert);
     }
