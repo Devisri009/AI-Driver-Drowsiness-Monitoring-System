@@ -1,7 +1,10 @@
 import cv2
 import time
 import threading
+
 from flask import Flask, Response
+from flask_cors import CORS
+
 
 class VideoStreamer:
     """
@@ -55,8 +58,16 @@ class VideoStreamer:
 video_streamer = VideoStreamer()
 
 app = Flask(__name__)
+CORS(
+    app,
+    resources={
+        r"/video_feed": {
+            "origins": ["http://localhost:5173"]
+        }
+    }
+)
 
-@app.route('/video_feed', methods=['GET'])
+@app.route('/video_feed', methods=['GET', 'HEAD'])
 def video_feed():
     """
     MJPEG video feed streaming endpoint.

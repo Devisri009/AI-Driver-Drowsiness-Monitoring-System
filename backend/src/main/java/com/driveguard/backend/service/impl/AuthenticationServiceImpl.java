@@ -15,7 +15,6 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
-@SuppressWarnings("null")
 public class AuthenticationServiceImpl implements AuthenticationService {
 
     private final UserRepository userRepository;

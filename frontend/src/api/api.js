@@ -20,18 +20,23 @@ const apiCall = async (endpoint, options = {}) => {
   if (!response.ok) {
     let errorMessage = 'An error occurred';
     try {
-      const errorData = await response.json();
-      errorMessage = errorData.message || errorMessage;
-      // Handle Spring Boot validation errors
-      if (errorData.errors) {
-        if (Array.isArray(errorData.errors)) {
-          errorMessage = errorData.errors.join(', ');
-        } else if (typeof errorData.errors === 'object') {
-          errorMessage = Object.values(errorData.errors).join(', ');
+      const text = await response.text();
+      try {
+        const errorData = JSON.parse(text);
+        errorMessage = errorData.message || errorMessage;
+        // Handle Spring Boot validation errors
+        if (errorData.errors) {
+          if (Array.isArray(errorData.errors)) {
+            errorMessage = errorData.errors.join(', ');
+          } else if (typeof errorData.errors === 'object') {
+            errorMessage = Object.values(errorData.errors).join(', ');
+          }
         }
+      } catch (e) {
+        errorMessage = text || response.statusText || errorMessage;
       }
     } catch (e) {
-      errorMessage = await response.text() || response.statusText;
+      errorMessage = response.statusText || errorMessage;
     }
     throw new Error(errorMessage);
   }
@@ -68,5 +73,18 @@ export const api = {
   }),
   getLiveMonitoring: () => apiCall('/monitoring/live', {
     method: 'GET',
-  })
+  }),
+  getSettings: () => apiCall('/settings', {
+    method: 'GET',
+  }),
+  updateSettings: (data) => apiCall('/settings', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }),
+  startMonitoring: () => apiCall('/monitoring/start', {
+    method: 'POST',
+  }),
+  stopMonitoring: () => apiCall('/monitoring/stop', {
+    method: 'POST',
+  }),
 };

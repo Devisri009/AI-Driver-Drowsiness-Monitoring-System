@@ -8,11 +8,12 @@ export const Sidebar = () => {
   const navigate = useNavigate();
 
   const navItems = [
-    { name: 'Dashboard', path: '/dashboard', icon: <Icons.Dashboard size={20} /> },
+    { name: 'Dashboard',      path: '/dashboard', icon: <Icons.Dashboard size={20} /> },
     { name: 'Live Monitoring', path: '/monitoring', icon: <Icons.Monitor size={20} /> },
-    { name: 'Alert History', path: '/alerts', icon: <Icons.Alerts size={20} /> },
-    { name: 'Reports', path: '/reports', icon: <Icons.Reports size={20} /> },
-    { name: 'My Profile', path: '/profile', icon: <Icons.User size={20} /> },
+    { name: 'Alert History',  path: '/alerts',    icon: <Icons.Alerts size={20} /> },
+    { name: 'Reports',        path: '/reports',   icon: <Icons.Reports size={20} /> },
+    { name: 'AI Settings',    path: '/settings',  icon: <Icons.Shield size={20} /> },
+    { name: 'My Profile',     path: '/profile',   icon: <Icons.User size={20} /> },
   ];
 
   return (

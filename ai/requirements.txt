@@ -4,3 +4,5 @@ numpy
 requests
 python-dotenv
 flask
+flask-cors
+types-Flask-Cors

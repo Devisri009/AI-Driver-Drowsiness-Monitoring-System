@@ -1,6 +1,8 @@
 import cv2
+import time
 import mediapipe as mp
-from config import EAR_THRESHOLD, DROWSY_CONSECUTIVE_FRAMES, SLEEPING_CONSECUTIVE_FRAMES, YAWN_THRESHOLD, YAWN_CONSECUTIVE_FRAMES, ALARM_SOUND_PATH, BACKEND_API_URL, JWT_TOKEN
+from config import ALARM_SOUND_PATH, BACKEND_API_URL, YAWN_CONSECUTIVE_FRAMES
+import utils.settings_client as settings_module
 from utils.face_landmarks import LEFT_EYE_INDICES, RIGHT_EYE_INDICES, LEFT_EYE_EAR_INDICES, RIGHT_EYE_EAR_INDICES, MOUTH_INDICES, MOUTH_MAR_INDICES
 from utils.ear import calculate_ear
 from utils.mar import calculate_mar
@@ -8,8 +10,10 @@ from utils.alarm import AlarmPlayer
 from utils.api_client import BackendApiClient
 from utils.live_metrics_client import LiveMetricsClient
 
+ALERT_COOLDOWN_SECONDS = 30
+
 class FaceDetector:
-    def __init__(self, min_detection_confidence=0.5, min_tracking_confidence=0.5):
+    def __init__(self, jwt_token, min_detection_confidence=0.5, min_tracking_confidence=0.5):
         self.mp_face_mesh = mp.solutions.face_mesh
         self.face_mesh = self.mp_face_mesh.FaceMesh(
             max_num_faces=1,
@@ -37,9 +41,11 @@ class FaceDetector:
         self.alarm_player = AlarmPlayer(ALARM_SOUND_PATH)
 
         # API client and status tracking initialization
-        self.api_client = BackendApiClient(BACKEND_API_URL, JWT_TOKEN)
-        self.live_metrics_client = LiveMetricsClient(BACKEND_API_URL, JWT_TOKEN)
+        self.api_client = BackendApiClient(BACKEND_API_URL, jwt_token)
+        self.live_metrics_client = LiveMetricsClient(BACKEND_API_URL, jwt_token)
         self.prev_driver_status = "ALERT"
+        self.last_drowsy_alert_time = 0
+        self.last_sleeping_alert_time = 0
 
     def process(self, frame):
         """
@@ -50,6 +56,14 @@ class FaceDetector:
         Adds status text ("Face Detected", "Left Eye Detected", "Right Eye Detected",
         and live average EAR in green, or "No Face Detected" in red) on the frame.
         """
+        # ── Snapshot live settings once per frame (single lock acquisition) ────
+        # cfg is a plain dict; reading from it in the rest of this method
+        # never touches the settings_client lock again.
+        cfg = settings_module.settings_client.get_all()
+        # YAWN_CONSECUTIVE_FRAMES is not a backend-managed field; keep it from
+        # config.py so the backend settings surface stays minimal.
+        cfg["yawnConsecutiveFrames"] = YAWN_CONSECUTIVE_FRAMES
+
         # Convert BGR frame to RGB for MediaPipe
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.face_mesh.process(rgb_frame)
@@ -57,17 +71,19 @@ class FaceDetector:
         face_detected = False
         left_eye_detected = False
         right_eye_detected = False
+        mouth_detected = False
         average_ear = 0.0
         average_mar = 0.0
 
-        if results.multi_face_landmarks:
+        multi_face_landmarks = getattr(results, 'multi_face_landmarks', None)
+        if multi_face_landmarks:
             face_detected = True
-            for face_landmarks in results.multi_face_landmarks:
+            for face_landmarks in multi_face_landmarks:
                 # 1. Draw tesselation (refined mesh structure)
                 self.mp_drawing.draw_landmarks(
                     image=frame,
                     landmark_list=face_landmarks,
-                    connections=self.mp_face_mesh.FACEMESH_TESSELATION,
+                    connections=self.mp_face_mesh.FACEMESH_TESSELATION,  # type: ignore
                     landmark_drawing_spec=None,
                     connection_drawing_spec=self.mp_drawing_styles.get_default_face_mesh_tesselation_style()
                 )
@@ -76,7 +92,7 @@ class FaceDetector:
                 self.mp_drawing.draw_landmarks(
                     image=frame,
                     landmark_list=face_landmarks,
-                    connections=self.mp_face_mesh.FACEMESH_CONTOURS,
+                    connections=self.mp_face_mesh.FACEMESH_CONTOURS,  # type: ignore
                     landmark_drawing_spec=None,
                     connection_drawing_spec=self.mp_drawing_styles.get_default_face_mesh_contours_style()
                 )
@@ -85,7 +101,7 @@ class FaceDetector:
                 self.mp_drawing.draw_landmarks(
                     image=frame,
                     landmark_list=face_landmarks,
-                    connections=self.mp_face_mesh.FACEMESH_IRISES,
+                    connections=self.mp_face_mesh.FACEMESH_IRISES,  # type: ignore
                     landmark_drawing_spec=None,
                     connection_drawing_spec=self.mp_drawing_styles.get_default_face_mesh_iris_connections_style()
                 )
@@ -111,7 +127,6 @@ class FaceDetector:
                     right_eye_detected = False
 
                 # 4b. Highlight mouth landmarks with blue circles
-                mouth_detected = False
                 try:
                     for idx in MOUTH_INDICES:
                         landmark = face_landmarks.landmark[idx]
@@ -129,9 +144,9 @@ class FaceDetector:
                     average_mar = 0.0
 
                 # 4d. Yawn detection using MAR threshold and consecutive frame count
-                if average_mar is not None and average_mar > YAWN_THRESHOLD:
+                if average_mar is not None and average_mar > cfg["marThreshold"]:
                     self.open_mouth_frames += 1
-                    if self.open_mouth_frames >= YAWN_CONSECUTIVE_FRAMES and not self.mouth_open:
+                    if self.open_mouth_frames >= cfg["yawnConsecutiveFrames"] and not self.mouth_open:
                         self.yawn_count += 1
                         self.mouth_open = True
                 else:
@@ -153,8 +168,8 @@ class FaceDetector:
 
                 average_ear = (left_ear + right_ear) / 2.0
 
-                # 6. Blink detection using EAR threshold
-                if average_ear < EAR_THRESHOLD:
+                # 6. Blink detection using EAR threshold (live from settings)
+                if average_ear < cfg["earThreshold"]:
                     # Eye has just closed - mark as closed
                     if not self.eye_closed:
                         self.eye_closed = True
@@ -165,11 +180,11 @@ class FaceDetector:
                         self.eye_closed = False
 
                 # 7. Driver status detection using consecutive closed-eye frame count
-                if average_ear < EAR_THRESHOLD:
+                if average_ear < cfg["earThreshold"]:
                     self.closed_eye_frames += 1
-                    if self.closed_eye_frames >= SLEEPING_CONSECUTIVE_FRAMES:
+                    if self.closed_eye_frames >= cfg["sleepingFrames"]:
                         self.driver_status = "SLEEPING"
-                    elif self.closed_eye_frames >= DROWSY_CONSECUTIVE_FRAMES:
+                    elif self.closed_eye_frames >= cfg["drowsyFrames"]:
                         self.driver_status = "DROWSY"
                     else:
                         self.driver_status = "ALERT"
@@ -300,41 +315,78 @@ class FaceDetector:
                 cv2.LINE_AA
             )
 
-        # Control the alarm sound based on driver status
-        if self.driver_status in ["DROWSY", "SLEEPING"]:
+        # Control the alarm sound based on driver status and alarmEnabled setting
+        if self.driver_status in ["DROWSY", "SLEEPING"] and cfg["alarmEnabled"]:
             self.alarm_player.start()
-        elif self.driver_status == "ALERT":
+        else:
             self.alarm_player.stop()
 
         # Send alert to backend on specific status transitions
+        current_time = time.time()
         if self.prev_driver_status == "ALERT" and self.driver_status == "DROWSY":
-            try:
-                ear_val = average_ear if average_ear is not None else 0.0
-                self.api_client.send_alert(
-                    alert_type="DROWSINESS",
-                    severity="MEDIUM",
-                    driver_status="DROWSY",
-                    message="Drowsiness detected",
-                    eye_aspect_ratio=ear_val,
-                    confidence=100.0
-                )
-                print("[API] Sent Alert: DROWSY (Severity: MEDIUM)")
-            except Exception as e:
-                print(f"[API ERROR] Failed to send alert: {e}")
+            if current_time - self.last_drowsy_alert_time >= ALERT_COOLDOWN_SECONDS:
+                try:
+                    ear_val = average_ear if average_ear is not None else 0.0
+                    self.api_client.send_alert(
+                        alert_type="DROWSINESS",
+                        severity="MEDIUM",
+                        driver_status="DROWSY",
+                        message="Drowsiness detected",
+                        eye_aspect_ratio=ear_val,
+                        confidence=100.0
+                    )
+                    self.last_drowsy_alert_time = current_time
+                    print("[API] Sent Alert: DROWSY (Severity: MEDIUM)")
+                except Exception as e:
+                    print(f"[API ERROR] Failed to send alert: {e}")
+        elif self.prev_driver_status == "DROWSY" and self.driver_status == "DROWSY":
+            if current_time - self.last_drowsy_alert_time >= ALERT_COOLDOWN_SECONDS:
+                try:
+                    ear_val = average_ear if average_ear is not None else 0.0
+                    self.api_client.send_alert(
+                        alert_type="DROWSINESS",
+                        severity="HIGH",
+                        driver_status="DROWSY",
+                        message="Driver remains drowsy",
+                        eye_aspect_ratio=ear_val,
+                        confidence=100.0
+                    )
+                    self.last_drowsy_alert_time = current_time
+                    print("[API] Sent Alert: DROWSY (Severity: HIGH) [Continuous]")
+                except Exception as e:
+                    print(f"[API ERROR] Failed to send alert: {e}")
         elif self.prev_driver_status == "DROWSY" and self.driver_status == "SLEEPING":
-            try:
-                ear_val = average_ear if average_ear is not None else 0.0
-                self.api_client.send_alert(
-                    alert_type="DROWSINESS",
-                    severity="HIGH",
-                    driver_status="SLEEPING",
-                    message="Driver sleeping detected",
-                    eye_aspect_ratio=ear_val,
-                    confidence=100.0
-                )
-                print("[API] Sent Alert: SLEEPING (Severity: HIGH)")
-            except Exception as e:
-                print(f"[API ERROR] Failed to send alert: {e}")
+            if current_time - self.last_sleeping_alert_time >= ALERT_COOLDOWN_SECONDS:
+                try:
+                    ear_val = average_ear if average_ear is not None else 0.0
+                    self.api_client.send_alert(
+                        alert_type="DROWSINESS",
+                        severity="HIGH",
+                        driver_status="SLEEPING",
+                        message="Driver sleeping detected",
+                        eye_aspect_ratio=ear_val,
+                        confidence=100.0
+                    )
+                    self.last_sleeping_alert_time = current_time
+                    print("[API] Sent Alert: SLEEPING (Severity: HIGH)")
+                except Exception as e:
+                    print(f"[API ERROR] Failed to send alert: {e}")
+        elif self.prev_driver_status == "SLEEPING" and self.driver_status == "SLEEPING":
+            if current_time - self.last_sleeping_alert_time >= ALERT_COOLDOWN_SECONDS:
+                try:
+                    ear_val = average_ear if average_ear is not None else 0.0
+                    self.api_client.send_alert(
+                        alert_type="DROWSINESS",
+                        severity="HIGH",
+                        driver_status="SLEEPING",
+                        message="Driver still sleeping",
+                        eye_aspect_ratio=ear_val,
+                        confidence=100.0
+                    )
+                    self.last_sleeping_alert_time = current_time
+                    print("[API] Sent Alert: SLEEPING (Severity: HIGH) [Continuous]")
+                except Exception as e:
+                    print(f"[API ERROR] Failed to send alert: {e}")
 
         # Update previous status for next frame comparison
         self.prev_driver_status = self.driver_status

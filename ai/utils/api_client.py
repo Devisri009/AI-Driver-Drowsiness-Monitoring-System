@@ -44,7 +44,6 @@ class BackendApiClient:
             "eyeAspectRatio": float(eye_aspect_ratio),
             "confidence": float(confidence)
         }
-        
         # Send post request, timeout in 5 seconds to prevent freezing the AI thread
         response = requests.post(
             url,
@@ -52,11 +51,6 @@ class BackendApiClient:
             headers=headers,
             timeout=5
         )
-
-        print("\n========== BACKEND RESPONSE ==========")
-        print("Status Code:", response.status_code)
-        print("Response Body:", response.text)
-        print("======================================\n")
 
         response.raise_for_status()
         return response.json()

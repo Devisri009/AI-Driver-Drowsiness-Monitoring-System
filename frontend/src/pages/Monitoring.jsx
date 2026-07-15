@@ -24,9 +24,6 @@ export const Monitoring = () => {
   const [streamLoading, setStreamLoading] = useState(true);
   const retryTimerRef = useRef(null);
 
-  const [simMode, setSimMode] = useState('Normal'); // 'Normal', 'Drowsy', 'Distracted'
-  const [fatigueScore, setFatigueScore] = useState(15); // percentage (0 - 100)
-  const [eyeState, setEyeState] = useState('Open & Tracking');
   const [cameraError, setCameraError] = useState(null);
 
   // ── Live Backend Monitoring State ──
@@ -35,6 +32,11 @@ export const Monitoring = () => {
   const [liveError, setLiveError] = useState(null);
 
   useEffect(() => {
+    if (!isMonitoring) {
+      setIsLiveLoading(false);
+      return;
+    }
+
     let intervalId;
     let isMounted = true;
 
@@ -62,7 +64,7 @@ export const Monitoring = () => {
       isMounted = false;
       clearInterval(intervalId);
     };
-  }, []);
+  }, [isMonitoring]);
 
   // ── AI MJPEG Stream availability probe ──
   // Polls the /video_feed endpoint via a HEAD request every 3 s until
@@ -84,11 +86,19 @@ export const Monitoring = () => {
   }, []);
 
   useEffect(() => {
-    probeStream();
+    if (isMonitoring) {
+      probeStream();
+    } else {
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+      }
+      setStreamAvailable(false);
+      setStreamLoading(false);
+    }
     return () => {
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     };
-  }, [probeStream]);
+  }, [isMonitoring, probeStream]);
 
   // Called by the <img> element when the MJPEG stream breaks mid-session
   const handleStreamError = useCallback(() => {
@@ -152,41 +162,12 @@ export const Monitoring = () => {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
 
-    let localFatigue = fatigueScore;
-    let localSimMode = simMode;
-
     const renderLoop = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       // Define coordinates relative to standard dimensions (640x480)
       const width = canvas.width;
       const height = canvas.height;
-
-      // Update fatigue values based on active simulation mode
-      if (simMode === 'Drowsy') {
-        localFatigue = Math.min(100, localFatigue + 0.8);
-        setFatigueScore(Math.round(localFatigue));
-        setEyeState('CLOSED (Micro-sleep Detected)');
-
-        // Log critical alert if threshold exceeded
-        if (localFatigue >= 78 && !activeAlert) {
-          logAlert('Eyes Closed (Micro-sleep)', 'High');
-        }
-      } else if (simMode === 'Distracted') {
-        localFatigue = Math.min(75, localFatigue + 0.5);
-        setFatigueScore(Math.round(localFatigue));
-        setEyeState('BLINKING IRREGULAR (Yawning)');
-
-        // Log medium warning if threshold exceeded
-        if (localFatigue >= 60 && !activeAlert) {
-          logAlert('Frequent Yawning (Fatigue)', 'Medium');
-        }
-      } else {
-        // Normal Mode - slowly cool down to nominal fatigue levels
-        localFatigue = Math.max(12, localFatigue - 1.2);
-        setFatigueScore(Math.round(localFatigue));
-        setEyeState('Open & Tracking');
-      }
 
       // DRAW HUD OVERLAYS
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
@@ -291,14 +272,30 @@ export const Monitoring = () => {
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [isMonitoring, simMode, activeAlert]); // remove monitoredDriverId dependency
+  }, [isMonitoring]);
 
-  // Set sim parameters when mode changes
-  const handleSimChange = (mode) => {
-    setSimMode(mode);
-    if (mode === 'Normal') {
-      setFatigueScore(15);
-      setEyeState('Open & Tracking');
+  const handleStartMonitoring = async () => {
+    try {
+      await api.startMonitoring();
+      setIsMonitoring(true);
+    } catch (err) {
+      console.error("Failed to start AI process", err);
+      alert("Failed to start AI process: " + err.message);
+    }
+  };
+
+  const handleStopMonitoring = async () => {
+    try {
+      await api.stopMonitoring();
+      setIsMonitoring(false);
+      setStreamAvailable(false);
+      setStreamLoading(false);
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+      }
+    } catch (err) {
+      console.error("Failed to stop AI process", err);
+      alert("Failed to stop AI process: " + err.message);
     }
   };
 
@@ -316,8 +313,21 @@ export const Monitoring = () => {
         {/* Live AI Camera Panel (Span 2) */}
         <div className="card" style={{ ...styles.gridCol2, padding: '1.25rem' }}>
           <div style={styles.streamContainer}>
+            {/* Camera placeholder when monitoring is inactive */}
+            {!isMonitoring && (
+              <div style={styles.cameraPlaceholder}>
+                <div style={styles.placeholderBackgroundLines} />
+                <div style={styles.faceTargetOutline} />
+                <div style={styles.placeholderText}>
+                  <Icons.Monitor size={48} color="rgba(255,255,255,0.3)" style={{ margin: '0 auto 1rem' }} />
+                  <div style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '0.5rem' }}>MONITORING INACTIVE</div>
+                  <div style={{ color: 'rgba(255,255,255,0.3)', fontWeight: '500' }}>Click "Start Monitoring" to begin the stream</div>
+                </div>
+              </div>
+            )}
+
             {/* Loading pulse while probing the stream */}
-            {streamLoading && (
+            {isMonitoring && streamLoading && (
               <div style={styles.streamOverlay}>
                 <div style={styles.streamSpinner} />
                 <span style={styles.streamOverlayText}>Connecting to AI Camera...</span>
@@ -325,7 +335,7 @@ export const Monitoring = () => {
             )}
 
             {/* Fallback message when stream is confirmed unavailable */}
-            {!streamLoading && !streamAvailable && (
+            {isMonitoring && !streamLoading && !streamAvailable && (
               <div style={styles.streamUnavailable}>
                 <Icons.Monitor size={48} color="rgba(255,255,255,0.3)" />
                 <span style={styles.streamUnavailableText}>Waiting for AI Camera...</span>
@@ -334,7 +344,7 @@ export const Monitoring = () => {
             )}
 
             {/* MJPEG live stream — rendered as a standard <img> */}
-            {streamAvailable && (
+            {isMonitoring && streamAvailable && (
               <img
                 src={`${AI_STREAM_URL}?t=${Date.now()}`}
                 alt="AI live camera feed"
@@ -362,165 +372,201 @@ export const Monitoring = () => {
               </span>
               <span style={styles.resolutionPill}>Real-time AI Analysis</span>
             </div>
+
+            {/* Start / Stop Monitoring Button */}
+            {!isMonitoring ? (
+              <button
+                className="btn btn-primary"
+                onClick={handleStartMonitoring}
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.5rem', display: 'inline-block', verticalAlign: 'middle' }}>
+                  <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" />
+                </svg>
+                Start Monitoring
+              </button>
+            ) : (
+              <button
+                className="btn btn-danger"
+                onClick={handleStopMonitoring}
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.5rem', display: 'inline-block', verticalAlign: 'middle' }}>
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" fill="currentColor" />
+                </svg>
+                Stop Monitoring
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Configurations panel */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        {/* Professional Dashboard - Right Column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
 
-          {/* Real-time Telemetry Telepresence details */}
-          <div className="card">
-            <h3 className="card-title">Driver Status</h3>
+          {/* ── Card 1: Driver Status ── */}
+          <div className="card" style={styles.dashCard}>
+            <div style={styles.cardHeader}>
+              <span style={styles.cardHeaderDot} />
+              <h3 style={styles.cardHeaderTitle}>Driver Status</h3>
+            </div>
             <div style={styles.metricList}>
               <div style={styles.telemetryItem}>
-                <span style={styles.telemetryLabel}>Readiness</span>
-                <span className={`badge ${
-                  !isMonitoring ? 'badge-info' :
-                  simMode === 'Normal' ? 'badge-success' :
-                  simMode === 'Distracted' ? 'badge-warning' : 'badge-danger'
-                }`}>
-                  {!isMonitoring ? 'STANDBY' : simMode === 'Normal' ? 'ATTENTIVE' : simMode === 'Distracted' ? 'DISTRACTED' : 'DROWSY'}
-                </span>
+                <span style={styles.telemetryLabel}>Driver State</span>
+                {!isMonitoring || !liveData?.driverStatus ? (
+                  <span style={styles.waitingText}>Waiting for AI...</span>
+                ) : (
+                  <span className={`badge ${
+                    liveData.driverStatus === 'SLEEPING' ? 'badge-danger' :
+                    liveData.driverStatus === 'DROWSY' ? 'badge-danger' :
+                    liveData.driverStatus === 'YAWNING' || liveData.driverStatus === 'DISTRACTED' ? 'badge-warning' :
+                    'badge-success'
+                  }`}>
+                    {liveData.driverStatus}
+                  </span>
+                )}
               </div>
 
               <div style={styles.telemetryItem}>
                 <span style={styles.telemetryLabel}>Eye Status</span>
-                <span style={{ fontWeight: '700', fontSize: '0.85rem', color: simMode === 'Drowsy' ? 'var(--danger)' : 'var(--text-main)' }}>
-                  {isMonitoring ? eyeState : 'N/A'}
-                </span>
+                {!isMonitoring || !liveData?.driverStatus ? (
+                  <span style={styles.waitingText}>--</span>
+                ) : (
+                  <span style={{ fontWeight: '700', fontSize: '0.82rem', color:
+                    liveData.driverStatus === 'SLEEPING' || liveData.driverStatus === 'DROWSY' ? 'var(--danger)' : 'var(--success)'
+                  }}>
+                    {liveData.driverStatus === 'SLEEPING' ? 'CLOSED' :
+                     liveData.driverStatus === 'DROWSY' ? 'PARTIALLY CLOSED' :
+                     'OPEN'}
+                  </span>
+                )}
               </div>
 
               <div style={styles.telemetryItem}>
-                <span style={styles.telemetryLabel}>Fatigue Level</span>
-                <span style={{ fontWeight: '700', fontSize: '0.85rem', color: fatigueScore > 75 ? 'var(--danger)' : 'var(--text-main)' }}>
-                  {isMonitoring ? `${fatigueScore}%` : 'N/A'}
+                <span style={styles.telemetryLabel}>Fatigue Score</span>
+                <span style={styles.waitingText}>--</span>
+              </div>
+
+              <div style={styles.telemetryItem}>
+                <span style={styles.telemetryLabel}>Last Updated</span>
+                <span style={{ fontWeight: '600', fontSize: '0.78rem', color: 'var(--text-sub)' }}>
+                  {liveData?.lastUpdated ? new Date(liveData.lastUpdated).toLocaleTimeString() : '--'}
                 </span>
               </div>
-
-              {/* Progress bar representing fatigue levels */}
-              {isMonitoring && (
-                <div style={styles.progressContainer}>
-                  <div style={{
-                    ...styles.progressBar,
-                    width: `${fatigueScore}%`,
-                    backgroundColor: fatigueScore < 50 ? 'var(--success)' : fatigueScore < 75 ? 'var(--warning)' : 'var(--danger)'
-                  }} />
-                </div>
-              )}
             </div>
           </div>
 
-          {/* Live Backend Monitoring Panel */}
-          <div className="card">
-            <h3 className="card-title">Live Monitoring Data</h3>
-            {isLiveLoading && !liveData ? (
-              <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-sub)' }}>
-                <div>Loading monitoring data...</div>
+          {/* ── Card 2: AI Detection Metrics ── */}
+          <div className="card" style={styles.dashCard}>
+            <div style={styles.cardHeader}>
+              <span style={styles.cardHeaderDot} />
+              <h3 style={styles.cardHeaderTitle}>AI Detection Metrics</h3>
+            </div>
+            <div style={styles.metricsGrid}>
+              <div style={styles.metricBox}>
+                <span style={styles.metricBoxLabel}>EAR</span>
+                <span style={styles.metricBoxValue}>
+                  {liveData?.ear != null ? liveData.ear.toFixed(3) : '--'}
+                </span>
+                <span style={styles.metricBoxSub}>Eye Aspect Ratio</span>
               </div>
-            ) : liveError ? (
-              <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--danger)', backgroundColor: 'var(--danger-light)', borderRadius: '8px' }}>
-                <Icons.Warning size={24} color="var(--danger)" style={{ margin: '0 auto 0.5rem' }} />
-                <div>{liveError}</div>
+              <div style={styles.metricBox}>
+                <span style={styles.metricBoxLabel}>MAR</span>
+                <span style={styles.metricBoxValue}>
+                  {liveData?.mar != null ? liveData.mar.toFixed(3) : '--'}
+                </span>
+                <span style={styles.metricBoxSub}>Mouth Aspect Ratio</span>
               </div>
-            ) : (!liveData || !liveData.driverStatus) ? (
-              <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-sub)' }}>
-                <div>No live monitoring data available.</div>
+              <div style={styles.metricBox}>
+                <span style={styles.metricBoxLabel}>Blinks</span>
+                <span style={styles.metricBoxValue}>
+                  {liveData?.blinkCount != null ? liveData.blinkCount : '--'}
+                </span>
+                <span style={styles.metricBoxSub}>Blink Count</span>
               </div>
-            ) : (
-              <div style={styles.metricList}>
-                <div style={styles.telemetryItem}>
-                  <span style={styles.telemetryLabel}>Driver Status</span>
-                  <span style={{ fontWeight: '700', fontSize: '0.85rem', color: liveData.driverStatus === 'DROWSY' || liveData.driverStatus === 'SLEEPING' ? 'var(--danger)' : liveData.driverStatus === 'YAWNING' || liveData.driverStatus === 'DISTRACTED' ? 'var(--warning)' : 'var(--text-main)' }}>
-                    {liveData.driverStatus}
-                  </span>
-                </div>
-                <div style={styles.telemetryItem}>
-                  <span style={styles.telemetryLabel}>EAR</span>
-                  <span style={{ fontWeight: '700', fontSize: '0.85rem' }}>
-                    {liveData.ear != null ? liveData.ear.toFixed(2) : 'N/A'}
-                  </span>
-                </div>
-                <div style={styles.telemetryItem}>
-                  <span style={styles.telemetryLabel}>MAR</span>
-                  <span style={{ fontWeight: '700', fontSize: '0.85rem' }}>
-                    {liveData.mar != null ? liveData.mar.toFixed(2) : 'N/A'}
-                  </span>
-                </div>
-                <div style={styles.telemetryItem}>
-                  <span style={styles.telemetryLabel}>Blink Count</span>
-                  <span style={{ fontWeight: '700', fontSize: '0.85rem' }}>
-                    {liveData.blinkCount != null ? liveData.blinkCount : 'N/A'}
-                  </span>
-                </div>
-                <div style={styles.telemetryItem}>
-                  <span style={styles.telemetryLabel}>Yawn Count</span>
-                  <span style={{ fontWeight: '700', fontSize: '0.85rem' }}>
-                    {liveData.yawnCount != null ? liveData.yawnCount : 'N/A'}
-                  </span>
-                </div>
-                <div style={styles.telemetryItem}>
-                  <span style={styles.telemetryLabel}>Alarm Status</span>
-                  <span className={`badge ${liveData.alarmStatus === 'ON' ? 'badge-danger' : 'badge-success'}`}>
-                    {liveData.alarmStatus || 'N/A'}
-                  </span>
-                </div>
-                <div style={styles.telemetryItem}>
-                  <span style={styles.telemetryLabel}>Last Updated</span>
-                  <span style={{ fontWeight: '700', fontSize: '0.85rem' }}>
-                    {liveData.lastUpdated ? new Date(liveData.lastUpdated).toLocaleString() : 'N/A'}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Simulator Panel for Demonstration */}
-          {isMonitoring && (
-            <div className="card" style={styles.simulatorCard}>
-              <div className="d-flex align-center gap-2" style={{ marginBottom: '0.5rem' }}>
-                <Icons.Warning size={18} color="var(--primary)" />
-                <h3 className="card-title" style={{ margin: 0, fontSize: '1rem', fontWeight: '700' }}>Test System</h3>
-              </div>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-sub)', marginBottom: '1rem' }}>
-                Use these options to manually trigger drowsiness scenarios and see how DriveGuard responds.
-              </p>
-              <div style={styles.simButtonsContainer}>
-                <button
-                  style={{
-                    ...styles.simBtn,
-                    borderColor: simMode === 'Normal' ? 'var(--success)' : 'var(--border)',
-                    backgroundColor: simMode === 'Normal' ? 'var(--success-light)' : 'transparent',
-                    color: simMode === 'Normal' ? 'var(--success)' : 'var(--text-main)'
-                  }}
-                  onClick={() => handleSimChange('Normal')}
-                >
-                  🟢 Reset to Normal
-                </button>
-                <button
-                  style={{
-                    ...styles.simBtn,
-                    borderColor: simMode === 'Distracted' ? 'var(--warning)' : 'var(--border)',
-                    backgroundColor: simMode === 'Distracted' ? 'var(--warning-light)' : 'transparent',
-                    color: simMode === 'Distracted' ? '#92400e' : 'var(--text-main)'
-                  }}
-                  onClick={() => handleSimChange('Distracted')}
-                >
-                  🟡 Simulate Yawning (Medium)
-                </button>
-                <button
-                  style={{
-                    ...styles.simBtn,
-                    borderColor: simMode === 'Drowsy' ? 'var(--danger)' : 'var(--border)',
-                    backgroundColor: simMode === 'Drowsy' ? 'var(--danger-light)' : 'transparent',
-                    color: simMode === 'Drowsy' ? 'var(--danger)' : 'var(--text-main)'
-                  }}
-                  onClick={() => handleSimChange('Drowsy')}
-                >
-                  🔴 Simulate Micro-sleep (High)
-                </button>
+              <div style={styles.metricBox}>
+                <span style={styles.metricBoxLabel}>Yawns</span>
+                <span style={styles.metricBoxValue}>
+                  {liveData?.yawnCount != null ? liveData.yawnCount : '--'}
+                </span>
+                <span style={styles.metricBoxSub}>Yawn Count</span>
               </div>
             </div>
-          )}
+          </div>
+
+          {/* ── Card 3: Face Detection Status ── */}
+          <div className="card" style={styles.dashCard}>
+            <div style={styles.cardHeader}>
+              <span style={styles.cardHeaderDot} />
+              <h3 style={styles.cardHeaderTitle}>Face Detection Status</h3>
+            </div>
+            {(() => {
+              const faceActive = isMonitoring && liveData?.ear != null && liveData?.mar != null;
+              const StatusBadge = ({ active }) => (
+                <span style={active ? styles.badgeActive : styles.badgeOffline}>
+                  {active ? '🟢 Active' : '🔴 Not Detected'}
+                </span>
+              );
+              return (
+                <div style={styles.metricList}>
+                  <div style={styles.telemetryItem}>
+                    <span style={styles.telemetryLabel}>Face Detection</span>
+                    {!isMonitoring ? <span style={styles.waitingText}>Waiting for AI...</span> : <StatusBadge active={faceActive} />}
+                  </div>
+                  <div style={styles.telemetryItem}>
+                    <span style={styles.telemetryLabel}>Left Eye</span>
+                    {!isMonitoring ? <span style={styles.waitingText}>--</span> : <StatusBadge active={faceActive} />}
+                  </div>
+                  <div style={styles.telemetryItem}>
+                    <span style={styles.telemetryLabel}>Right Eye</span>
+                    {!isMonitoring ? <span style={styles.waitingText}>--</span> : <StatusBadge active={faceActive} />}
+                  </div>
+                  <div style={styles.telemetryItem}>
+                    <span style={styles.telemetryLabel}>Mouth Detection</span>
+                    {!isMonitoring ? <span style={styles.waitingText}>--</span> : <StatusBadge active={faceActive} />}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* ── Card 4: System Health ── */}
+          <div className="card" style={styles.dashCard}>
+            <div style={styles.cardHeader}>
+              <span style={styles.cardHeaderDot} />
+              <h3 style={styles.cardHeaderTitle}>System Health</h3>
+            </div>
+            <div style={styles.metricList}>
+              <div style={styles.telemetryItem}>
+                <span style={styles.telemetryLabel}>AI Engine</span>
+                <span style={isMonitoring && liveData?.driverStatus ? styles.healthOnline : styles.healthOffline}>
+                  {!isMonitoring ? '⚫ Offline' : !liveData?.driverStatus ? '🟠 Starting...' : '🟢 Running'}
+                </span>
+              </div>
+              <div style={styles.telemetryItem}>
+                <span style={styles.telemetryLabel}>Camera</span>
+                <span style={streamAvailable ? styles.healthOnline : styles.healthOffline}>
+                  {streamAvailable ? '🟢 Connected' : '🔴 Disconnected'}
+                </span>
+              </div>
+              <div style={styles.telemetryItem}>
+                <span style={styles.telemetryLabel}>Backend API</span>
+                <span style={!liveError ? styles.healthOnline : styles.healthOffline}>
+                  {!liveError ? '🟢 Connected' : '🔴 Disconnected'}
+                </span>
+              </div>
+              <div style={styles.telemetryItem}>
+                <span style={styles.telemetryLabel}>Video Stream</span>
+                <span style={streamAvailable ? styles.healthOnline : styles.healthOffline}>
+                  {streamLoading ? '🟠 Connecting...' : streamAvailable ? '🟢 Live' : '⚫ Waiting'}
+                </span>
+              </div>
+              <div style={styles.telemetryItem}>
+                <span style={styles.telemetryLabel}>Alarm</span>
+                <span className={`badge ${liveData?.alarmStatus === 'ON' ? 'badge-danger' : 'badge-success'}`}>
+                  {liveData?.alarmStatus || 'OFF'}
+                </span>
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
@@ -737,25 +783,96 @@ const styles = {
     borderRadius: '9999px',
     transition: 'width 0.3s ease, background-color 0.3s ease'
   },
-  simulatorCard: {
-    borderColor: 'rgba(59, 130, 246, 0.2)',
-    boxShadow: '0 4px 6px -1px rgba(59, 130, 246, 0.05)'
+  dashCard: {
+    borderColor: 'rgba(59, 130, 246, 0.15)',
   },
-  simButtonsContainer: {
+  cardHeader: {
     display: 'flex',
-    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '0.5rem',
+    marginBottom: '1rem',
+    paddingBottom: '0.75rem',
+    borderBottom: '1px solid var(--border)'
+  },
+  cardHeaderDot: {
+    width: '8px',
+    height: '8px',
+    borderRadius: '50%',
+    backgroundColor: 'var(--primary)',
+    flexShrink: 0
+  },
+  cardHeaderTitle: {
+    fontSize: '0.9rem',
+    fontWeight: '700',
+    color: 'var(--text-main)',
+    margin: 0,
+    letterSpacing: '0.01em'
+  },
+  waitingText: {
+    fontSize: '0.82rem',
+    color: 'var(--text-sub)',
+    fontStyle: 'italic'
+  },
+  metricsGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
     gap: '0.75rem'
   },
-  simBtn: {
-    display: 'block',
-    width: '100%',
-    padding: '0.85rem',
-    fontSize: '0.85rem',
+  metricBox: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    padding: '0.75rem 0.5rem',
+    backgroundColor: 'var(--bg-subtle, #f8fafc)',
+    borderRadius: '10px',
+    border: '1px solid var(--border)',
+    gap: '0.2rem'
+  },
+  metricBoxLabel: {
+    fontSize: '0.7rem',
+    fontWeight: '700',
+    color: 'var(--primary)',
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase'
+  },
+  metricBoxValue: {
+    fontSize: '1.4rem',
+    fontWeight: '800',
+    color: 'var(--text-main)',
+    fontFamily: 'monospace',
+    lineHeight: 1.1
+  },
+  metricBoxSub: {
+    fontSize: '0.68rem',
+    color: 'var(--text-sub)',
+    textAlign: 'center'
+  },
+  badgeActive: {
+    fontSize: '0.78rem',
     fontWeight: '600',
-    borderRadius: '8px',
-    border: '1px solid',
-    textAlign: 'left',
-    transition: 'all 0.15s ease',
-    cursor: 'pointer'
+    color: 'var(--success)',
+    backgroundColor: 'var(--success-light)',
+    padding: '0.2rem 0.6rem',
+    borderRadius: '999px',
+    border: '1px solid rgba(16,185,129,0.25)'
+  },
+  badgeOffline: {
+    fontSize: '0.78rem',
+    fontWeight: '600',
+    color: 'var(--danger)',
+    backgroundColor: 'var(--danger-light)',
+    padding: '0.2rem 0.6rem',
+    borderRadius: '999px',
+    border: '1px solid rgba(239,68,68,0.25)'
+  },
+  healthOnline: {
+    fontSize: '0.82rem',
+    fontWeight: '600',
+    color: 'var(--success)'
+  },
+  healthOffline: {
+    fontSize: '0.82rem',
+    fontWeight: '600',
+    color: 'var(--text-sub)'
   }
 };

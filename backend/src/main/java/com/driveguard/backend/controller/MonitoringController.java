@@ -2,6 +2,7 @@ package com.driveguard.backend.controller;
 
 import com.driveguard.backend.model.LiveMetrics;
 import com.driveguard.backend.service.LiveMetricsService;
+import com.driveguard.backend.service.AIProcessService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -18,6 +19,24 @@ import org.springframework.web.bind.annotation.*;
 public class MonitoringController {
 
     private final LiveMetricsService liveMetricsService;
+    private final AIProcessService aiProcessService;
+
+    @PostMapping("/start")
+    @Operation(summary = "Start AI monitoring process", description = "Launches the python AI process for monitoring")
+    @ApiResponse(responseCode = "200", description = "AI process started successfully")
+    public ResponseEntity<Void> startMonitoring(@RequestHeader("Authorization") String authHeader) throws Exception {
+        String jwtToken = authHeader.startsWith("Bearer ") ? authHeader.substring(7) : authHeader;
+        aiProcessService.startProcess(jwtToken);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/stop")
+    @Operation(summary = "Stop AI monitoring process", description = "Terminates the python AI process")
+    @ApiResponse(responseCode = "200", description = "AI process stopped successfully")
+    public ResponseEntity<Void> stopMonitoring() {
+        aiProcessService.stopProcess();
+        return ResponseEntity.ok().build();
+    }
 
     @PostMapping("/live")
     @Operation(summary = "Update live metrics", description = "Updates the driver's current condition in memory")
@@ -45,3 +64,4 @@ public class MonitoringController {
         return principal.toString();
     }
 }
+

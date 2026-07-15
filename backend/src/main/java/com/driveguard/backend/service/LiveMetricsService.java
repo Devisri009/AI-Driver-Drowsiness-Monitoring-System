@@ -7,20 +7,23 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class LiveMetricsService {
-    // Thread-safe map to store the latest metrics for each authenticated user email
+
     private final ConcurrentHashMap<String, LiveMetrics> userMetrics = new ConcurrentHashMap<>();
 
-    /**
-     * Updates the latest live metrics for the user.
-     */
     public void updateMetrics(String email, LiveMetrics metrics) {
+        System.out.println("===== POST METRICS =====");
+        System.out.println("Email: " + email);
+        System.out.println("Driver Status: " + metrics.getDriverStatus());
+        System.out.println("========================");
+
         userMetrics.put(email, metrics);
     }
 
-    /**
-     * Retrieves the latest live metrics for the user.
-     */
     public LiveMetrics getMetrics(String email) {
+        System.out.println("===== GET METRICS =====");
+        System.out.println("Email: " + email);
+        System.out.println("=======================");
+
         return userMetrics.get(email);
     }
 }
