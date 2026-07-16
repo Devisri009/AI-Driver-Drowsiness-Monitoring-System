@@ -87,4 +87,7 @@ export const api = {
   stopMonitoring: () => apiCall('/monitoring/stop', {
     method: 'POST',
   }),
+  getSessionSummaries: () => apiCall('/sessions/summaries', {
+    method: 'GET',
+  }),
 };

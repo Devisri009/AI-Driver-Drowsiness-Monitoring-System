@@ -1,284 +1,595 @@
-import React, { useContext, useState } from 'react';
-import { AppContext } from '../context/AppContext';
-import { LineChart, BarChart, DonutChart } from '../components/SVGChart';
+﻿import React, { useState, useEffect } from 'react';
+import { api } from '../api/api';
+import { Icons } from '../components/Icons';
 
-export const Reports = () => {
-  const { alerts } = useContext(AppContext);
-  const [reportRange, setReportRange] = useState('Weekly'); // 'Daily', 'Weekly', 'Monthly'
+// ─── Formatting Helpers ────────────────────────────────────────────────────
 
-  // Compute metric averages
-  const totalAlerts = alerts.length;
-  
-  // High Risk count
-  const highRiskAlerts = alerts.filter(a => a.riskLevel === 'High').length;
-
-  // 1. Incident Categories breakdown (for Donut Chart)
-  const categoriesMap = {
-    'Eyes Closed (Micro-sleep)': 0,
-    'Frequent Yawning': 0,
-    'Distracted (Eyes Off Road)': 0,
-  };
-
-  alerts.forEach(a => {
-    // Normalise key grouping
-    if (a.alertType.includes('Closed') || a.alertType.includes('Micro-sleep')) {
-      categoriesMap['Eyes Closed (Micro-sleep)']++;
-    } else if (a.alertType.includes('Yawn') || a.alertType.includes('Yawning')) {
-      categoriesMap['Frequent Yawning']++;
-    } else {
-      categoriesMap['Distracted (Eyes Off Road)']++;
-    }
+/**
+ * Formats an ISO / LocalDateTime string into "15 Jul 2026"
+ */
+const formatDate = (dateStr) => {
+  if (!dateStr) return '—';
+  return new Date(dateStr).toLocaleDateString(undefined, {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
   });
+};
 
-  // Map to Donut structure
-  const donutData = [
-    { label: 'Micro-sleep', value: categoriesMap['Eyes Closed (Micro-sleep)'], color: 'var(--danger)' },
-    { label: 'Yawning/Fatigue', value: categoriesMap['Frequent Yawning'], color: 'var(--warning)' },
-    { label: 'Distracted', value: categoriesMap['Distracted (Eyes Off Road)'], color: 'var(--secondary)' }
-  ];
+/**
+ * Formats an ISO / LocalDateTime string into "10:45 PM"
+ */
+const formatTime = (dateStr) => {
+  if (!dateStr) return '—';
+  return new Date(dateStr).toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+};
 
-  // 2. Line Chart ranges (Trends)
-  let lineData = [];
-  let lineLabels = [];
-  let rangeSubtitle = '';
-
-  if (reportRange === 'Daily') {
-    lineLabels = ['08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00'];
-    // Distribute today's alerts across hours
-    const todayAlerts = alerts.filter(a => new Date(a.timestamp).toDateString() === new Date().toDateString());
-    lineData = [0, 0, 0, 0, 0, 0, 0];
-    todayAlerts.forEach(a => {
-      const hour = new Date(a.timestamp).getHours();
-      if (hour >= 8 && hour < 10) lineData[0]++;
-      else if (hour >= 10 && hour < 12) lineData[1]++;
-      else if (hour >= 12 && hour < 14) lineData[2]++;
-      else if (hour >= 14 && hour < 16) lineData[3]++;
-      else if (hour >= 16 && hour < 18) lineData[4]++;
-      else if (hour >= 18 && hour < 20) lineData[5]++;
-      else if (hour >= 20) lineData[6]++;
-    });
-    rangeSubtitle = 'Hourly distribution of your alerts today';
-  } else if (reportRange === 'Weekly') {
-    // Dynamically query alerts over last 7 days
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const label = d.toLocaleDateString(undefined, { weekday: 'short' });
-      lineLabels.push(label);
-      
-      const count = alerts.filter(a => {
-        return new Date(a.timestamp).toDateString() === d.toDateString();
-      }).length;
-      lineData.push(count);
-    }
-    rangeSubtitle = 'Your daily alert volume over the past 7 days';
-  } else {
-    // Monthly statistics grouped by weeks
-    lineLabels = ['Week 1', 'Week 2', 'Week 3', 'Week 4'];
-    lineData = [
-      alerts.filter(a => {
-        const daysAgo = (Date.now() - new Date(a.timestamp).getTime()) / (1000 * 60 * 60 * 24);
-        return daysAgo >= 21 && daysAgo < 28;
-      }).length,
-      alerts.filter(a => {
-        const daysAgo = (Date.now() - new Date(a.timestamp).getTime()) / (1000 * 60 * 60 * 24);
-        return daysAgo >= 14 && daysAgo < 21;
-      }).length,
-      alerts.filter(a => {
-        const daysAgo = (Date.now() - new Date(a.timestamp).getTime()) / (1000 * 60 * 60 * 24);
-        return daysAgo >= 7 && daysAgo < 14;
-      }).length,
-      alerts.filter(a => {
-        const daysAgo = (Date.now() - new Date(a.timestamp).getTime()) / (1000 * 60 * 60 * 24);
-        return daysAgo < 7;
-      }).length
-    ];
-    rangeSubtitle = 'Your weekly alert volume over the past month';
+/**
+ * Converts raw seconds into a readable string:
+ *   38          → "38 sec"
+ *   145         → "2 min 25 sec"
+ *   4200        → "1 hr 10 min"
+ */
+const formatDuration = (seconds) => {
+  if (seconds == null) return '—';
+  const s = Number(seconds);
+  if (s < 60) return `${s} sec`;
+  if (s < 3600) {
+    const m = Math.floor(s / 60);
+    const rem = s % 60;
+    return rem > 0 ? `${m} min ${rem} sec` : `${m} min`;
   }
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return m > 0 ? `${h} hr ${m} min` : `${h} hr`;
+};
 
-  // 3. Time of Day breakdown (for Bar Chart)
-  const timeLabels = ['Morning (6a-12p)', 'Afternoon (12p-6p)', 'Evening (6p-12a)', 'Night (12a-6a)'];
-  const timeData = [0, 0, 0, 0];
-  alerts.forEach(a => {
-    const hour = new Date(a.timestamp).getHours();
-    if (hour >= 6 && hour < 12) timeData[0]++;
-    else if (hour >= 12 && hour < 18) timeData[1]++;
-    else if (hour >= 18) timeData[2]++;
-    else timeData[3]++;
-  });
+/**
+ * Returns a badge className for Overall Safety.
+ * SAFE → success  |  NEEDS_ATTENTION → warning  |  UNSAFE → danger
+ */
+const safetyBadgeClass = (value) => {
+  switch (value) {
+    case 'SAFE':            return 'badge badge-success';
+    case 'NEEDS_ATTENTION': return 'badge badge-warning';
+    case 'UNSAFE':          return 'badge badge-danger';
+    default:                return 'badge badge-info';
+  }
+};
+
+/**
+ * Returns a badge className for Worst Driver Status.
+ * ALERT → success  |  DROWSY → warning  |  SLEEPING → danger
+ */
+const driverStatusBadgeClass = (value) => {
+  switch (value) {
+    case 'ALERT':    return 'badge badge-success';
+    case 'DROWSY':   return 'badge badge-warning';
+    case 'SLEEPING': return 'badge badge-danger';
+    default:         return 'badge badge-info';
+  }
+};
+
+/**
+ * Returns a badge className for Session Status.
+ * COMPLETED → info (blue)  |  ACTIVE → success (green)
+ */
+const sessionStatusBadgeClass = (value) => {
+  switch (value) {
+    case 'COMPLETED': return 'badge badge-info';
+    case 'ACTIVE':    return 'badge badge-success';
+    default:          return 'badge badge-info';
+  }
+};
+
+/**
+ * Returns inline style for End Reason badge.
+ * USER_STOPPED → gray  |  PROCESS_CRASH → red  |  SYSTEM_SHUTDOWN → dark gray
+ */
+const endReasonStyle = (value) => {
+  switch (value) {
+    case 'USER_STOPPED':
+      return { backgroundColor: '#f1f5f9', color: '#64748b' };
+    case 'PROCESS_CRASH':
+      return { backgroundColor: 'var(--danger-light)', color: '#991b1b' };
+    case 'SYSTEM_SHUTDOWN':
+      return { backgroundColor: '#e2e8f0', color: '#334155' };
+    default:
+      return { backgroundColor: '#f1f5f9', color: '#64748b' };
+  }
+};
+
+/** Safely format a decimal to N fixed places, or return '—' */
+const fmt = (val, decimals = 3) =>
+  val != null ? Number(val).toFixed(decimals) : '—';
+
+// ─── Session Card ──────────────────────────────────────────────────────────
+
+const SessionCard = ({ session }) => {
+  const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="page-container">
-      {/* Page Header */}
-      <div style={styles.header}>
-        <div>
-          <h1 style={styles.title}>Safety Reports & Analytics</h1>
-          <p style={styles.subtitle}>Review your personal driving safety trends over time.</p>
-        </div>
-        
-        {/* Toggle Range */}
-        <div style={styles.toggleGroup}>
-          {['Daily', 'Weekly', 'Monthly'].map(range => (
-            <button
-              key={range}
-              style={{
-                ...styles.toggleBtn,
-                backgroundColor: reportRange === range ? 'var(--primary)' : '#ffffff',
-                color: reportRange === range ? '#ffffff' : 'var(--text-main)',
-                borderColor: reportRange === range ? 'var(--primary)' : 'var(--border)'
-              }}
-              onClick={() => setReportRange(range)}
-            >
-              {range}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Overview Cards Row */}
-      <div className="grid-cols-4" style={{ marginBottom: '2rem' }}>
-        <div className="card" style={styles.summaryCard}>
-          <span style={styles.summaryLabel}>Total Lifetime Alerts</span>
-          <span style={styles.summaryValue}>{totalAlerts}</span>
-          <span style={styles.summarySub}>Logged safety violations</span>
-        </div>
-        <div className="card" style={styles.summaryCard}>
-          <span style={styles.summaryLabel}>High Risk Alert Ratio</span>
-          <span style={styles.summaryValue}>
-            {totalAlerts > 0 
-              ? `${Math.round((highRiskAlerts / totalAlerts) * 100)}%` 
-              : '0%'}
-          </span>
-          <span style={styles.summarySub}>Severe micro-sleep events</span>
-        </div>
-        <div className="card" style={styles.summaryCard}>
-          <span style={styles.summaryLabel}>Most Common Issue</span>
-          <span style={{
-            ...styles.summaryValue,
-            fontSize: '1.25rem',
-            paddingTop: '0.35rem'
-          }}>
-            {donutData.sort((a,b) => b.value - a.value)[0].value > 0 ? donutData[0].label : 'None'}
-          </span>
-          <span style={styles.summarySub}>
-            Primary alert category
-          </span>
-        </div>
-        <div className="card" style={styles.summaryCard}>
-          <span style={styles.summaryLabel}>Safety Trend Rating</span>
-          <span style={{ ...styles.summaryValue, color: 'var(--success)' }}>
-            {totalAlerts === 0 ? '100%' : `${Math.max(60, 100 - (totalAlerts * 2))}%`}
-          </span>
-          <span style={styles.summarySub}>Overall driver alertness score</span>
-        </div>
-      </div>
-
-      {/* Charts Layout Grid */}
-      <div className="grid-cols-3" style={{ marginBottom: '2rem' }}>
-        {/* Trend Area Chart (Span 2) */}
-        <div className="card" style={styles.gridCol2}>
-          <h3 className="card-title">Personal Alert Trend</h3>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-sub)', marginBottom: '1.25rem' }}>{rangeSubtitle}</p>
-          <div style={styles.chartWrapper}>
-            <LineChart data={lineData} labels={lineLabels} />
+    <div className="card" style={cardStyles.wrapper}>
+      {/* ── Card Header ── */}
+      <div style={cardStyles.header} onClick={() => setExpanded((p) => !p)}>
+        <div style={cardStyles.headerLeft}>
+          <div style={cardStyles.iconBox}>
+            <Icons.Reports size={18} color="var(--primary)" />
+          </div>
+          <div>
+            <div style={cardStyles.sessionDate}>{formatDate(session.startTime)}</div>
+            <div style={cardStyles.sessionTime}>
+              {formatTime(session.startTime)}
+              {session.endTime ? ` – ${formatTime(session.endTime)}` : ''}
+              {session.durationSeconds != null && (
+                <span style={cardStyles.duration}>
+                  {' '}· {formatDuration(session.durationSeconds)}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Categories Pie Chart */}
-        <div className="card">
-          <h3 className="card-title">Incident Types</h3>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-sub)', marginBottom: '1.25rem' }}>Proportion of your drowsiness indicators</p>
-          <div style={styles.chartWrapper}>
-            <DonutChart data={donutData} />
-          </div>
+        <div style={cardStyles.headerRight}>
+          {session.overallSafety && (
+            <span className={safetyBadgeClass(session.overallSafety)}>
+              {session.overallSafety.replace('_', ' ')}
+            </span>
+          )}
+          {session.status && (
+            <span className={sessionStatusBadgeClass(session.status)}>
+              {session.status}
+            </span>
+          )}
+          <span
+            style={{
+              ...cardStyles.chevron,
+              transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+            }}
+          >
+            <Icons.ChevronDown size={16} color="var(--text-sub)" />
+          </span>
         </div>
       </div>
 
-      {/* Driver Comparisons Bar Chart */}
-      <div className="card">
-        <h3 className="card-title">Alerts by Time of Day</h3>
-        <p style={{ fontSize: '0.85rem', color: 'var(--text-sub)', marginBottom: '1.25rem' }}>
-          Breakdown showing when you are most likely to experience fatigue while driving.
-        </p>
-        <div style={styles.chartWrapper}>
-          <BarChart data={timeData} labels={timeLabels} color="var(--primary)" />
+      {/* ── Expanded Details ── */}
+      {expanded && (
+        <div style={cardStyles.body}>
+          {/* Quick Stats Row */}
+          <div style={cardStyles.statsRow}>
+            <StatChip label="Blinks"   value={session.totalBlinks ?? '—'} />
+            <StatChip label="Yawns"    value={session.totalYawns ?? '—'} />
+            <StatChip label="Alerts"   value={session.totalAlerts ?? '—'} color="var(--warning)" />
+            <StatChip label="Alarms"   value={session.totalAlarmActivations ?? '—'} color="var(--danger)" />
+          </div>
+
+          <div style={cardStyles.detailGrid}>
+            {/* ── Timing ── */}
+            <DetailSection title="Timing">
+              <DetailRow label="Start Time" value={`${formatDate(session.startTime)}  ${formatTime(session.startTime)}`} />
+              <DetailRow label="End Time"   value={session.endTime ? `${formatDate(session.endTime)}  ${formatTime(session.endTime)}` : '—'} />
+              <DetailRow label="Duration"   value={formatDuration(session.durationSeconds)} />
+            </DetailSection>
+
+            {/* ── Drowsiness Counts ── */}
+            <DetailSection title="Event Counts">
+              <DetailRow label="Total Blinks"      value={session.totalBlinks ?? '—'} />
+              <DetailRow label="Total Yawns"       value={session.totalYawns ?? '—'} />
+              <DetailRow label="Total Alerts"      value={session.totalAlerts ?? '—'} />
+              <DetailRow label="Medium Alerts"     value={session.mediumAlerts ?? '—'} />
+              <DetailRow label="High Alerts"       value={session.highAlerts ?? '—'} />
+              <DetailRow label="Alarm Activations" value={session.totalAlarmActivations ?? '—'} />
+            </DetailSection>
+
+            {/* ── Eye & Mouth Metrics ── */}
+            <DetailSection title="Eye & Mouth Metrics">
+              <DetailRow label="Average EAR" value={fmt(session.averageEar)} />
+              <DetailRow label="Average MAR" value={fmt(session.averageMar)} />
+              <DetailRow label="Minimum EAR" value={fmt(session.minimumEar)} />
+              <DetailRow label="Maximum MAR" value={fmt(session.maximumMar)} />
+            </DetailSection>
+
+            {/* ── Status & Safety ── */}
+            <DetailSection title="Status & Safety">
+              <DetailRow
+                label="Worst Driver Status"
+                value={
+                  session.worstDriverStatus ? (
+                    <span className={driverStatusBadgeClass(session.worstDriverStatus)}>
+                      {session.worstDriverStatus}
+                    </span>
+                  ) : '—'
+                }
+              />
+              <DetailRow
+                label="Overall Safety"
+                value={
+                  session.overallSafety ? (
+                    <span className={safetyBadgeClass(session.overallSafety)}>
+                      {session.overallSafety.replace('_', ' ')}
+                    </span>
+                  ) : '—'
+                }
+              />
+              <DetailRow
+                label="Session Status"
+                value={
+                  session.status ? (
+                    <span className={sessionStatusBadgeClass(session.status)}>
+                      {session.status}
+                    </span>
+                  ) : '—'
+                }
+              />
+              <DetailRow
+                label="End Reason"
+                value={
+                  session.endReason ? (
+                    <span className="badge" style={endReasonStyle(session.endReason)}>
+                      {session.endReason.replace('_', ' ')}
+                    </span>
+                  ) : '—'
+                }
+              />
+            </DetailSection>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
 
-const styles = {
+// ─── Sub-components ────────────────────────────────────────────────────────
+
+const StatChip = ({ label, value, color = 'var(--text-main)' }) => (
+  <div style={chipStyles.chip}>
+    <span style={{ ...chipStyles.value, color }}>{value}</span>
+    <span style={chipStyles.label}>{label}</span>
+  </div>
+);
+
+const DetailSection = ({ title, children }) => (
+  <div style={sectionStyles.section}>
+    <div style={sectionStyles.title}>{title}</div>
+    <div style={sectionStyles.rows}>{children}</div>
+  </div>
+);
+
+const DetailRow = ({ label, value }) => (
+  <div style={rowStyles.row}>
+    <span style={rowStyles.label}>{label}</span>
+    <span style={rowStyles.value}>{value}</span>
+  </div>
+);
+
+// ─── Main Reports Page ─────────────────────────────────────────────────────
+
+export const Reports = () => {
+  const [summaries, setSummaries] = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState('');
+
+  useEffect(() => {
+    const fetchSummaries = async () => {
+      try {
+        const data = await api.getSessionSummaries();
+        const sorted = Array.isArray(data)
+          ? [...data].sort(
+              (a, b) => new Date(b.startTime) - new Date(a.startTime)
+            )
+          : [];
+        setSummaries(sorted);
+      } catch (err) {
+        setError(err.message || 'Failed to load session summaries.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchSummaries();
+  }, []);
+
+  return (
+    <div className="page-container">
+      {/* Page Header */}
+      <div style={pageStyles.header}>
+        <div>
+          <h1 style={pageStyles.title}>Driving Session Reports</h1>
+          <p style={pageStyles.subtitle}>
+            Review your complete driving session history and safety analytics.
+          </p>
+        </div>
+        {!loading && !error && summaries.length > 0 && (
+          <div style={pageStyles.sessionCount}>
+            {summaries.length} session{summaries.length !== 1 ? 's' : ''}
+          </div>
+        )}
+      </div>
+
+      {/* ── Loading ── */}
+      {loading && (
+        <div style={pageStyles.infoBanner}>
+          <span style={pageStyles.spinner} />
+          <span>Loading session reports…</span>
+        </div>
+      )}
+
+      {/* ── Error ── */}
+      {!loading && error && (
+        <div style={pageStyles.errorBanner}>
+          <Icons.Warning size={18} color="#b91c1c" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* ── Empty State ── */}
+      {!loading && !error && summaries.length === 0 && (
+        <div style={pageStyles.emptyState}>
+          <Icons.Reports size={48} color="var(--border)" />
+          <h3 style={pageStyles.emptyTitle}>No driving sessions available.</h3>
+          <p style={pageStyles.emptySubtitle}>
+            Start monitoring to generate your first report.
+          </p>
+        </div>
+      )}
+
+      {/* ── Session Cards ── */}
+      {!loading && !error && summaries.length > 0 && (
+        <div style={pageStyles.cardList}>
+          {summaries.map((session) => (
+            <SessionCard key={session.id} session={session} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── Styles ────────────────────────────────────────────────────────────────
+
+const pageStyles = {
   header: {
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: '2rem',
     flexWrap: 'wrap',
-    gap: '1rem'
+    gap: '1rem',
   },
   title: {
     fontSize: '1.75rem',
     fontWeight: '800',
     color: 'var(--text-main)',
-    margin: 0
+    margin: 0,
   },
   subtitle: {
     fontSize: '0.95rem',
     color: 'var(--text-sub)',
-    marginTop: '0.25rem'
+    marginTop: '0.25rem',
   },
-  toggleGroup: {
-    display: 'flex',
-    backgroundColor: '#ffffff',
-    border: '1px solid var(--border)',
-    borderRadius: '8px',
-    padding: '2px',
-    boxShadow: 'var(--card-shadow)'
-  },
-  toggleBtn: {
-    padding: '0.5rem 1rem',
+  sessionCount: {
+    padding: '0.375rem 0.875rem',
+    borderRadius: '9999px',
+    backgroundColor: 'var(--primary-light)',
+    color: 'var(--primary)',
     fontSize: '0.85rem',
-    fontWeight: '600',
-    borderRadius: '6px',
-    border: '1px solid transparent',
-    transition: 'all 0.15s',
-    cursor: 'pointer'
+    fontWeight: '700',
+    alignSelf: 'center',
   },
-  summaryCard: {
-    padding: '1.5rem',
+  infoBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.75rem',
+    backgroundColor: '#f0f9ff',
+    border: '1px solid #bae6fd',
+    padding: '0.875rem 1.25rem',
+    borderRadius: '8px',
+    color: '#0369a1',
+    fontSize: '0.9rem',
+    fontWeight: '600',
+    marginBottom: '1.5rem',
+  },
+  spinner: {
+    display: 'inline-block',
+    width: '16px',
+    height: '16px',
+    border: '2px solid #bae6fd',
+    borderTopColor: '#0369a1',
+    borderRadius: '50%',
+    animation: 'spin 0.8s linear infinite',
+    flexShrink: 0,
+  },
+  errorBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.625rem',
+    backgroundColor: 'rgba(239,68,68,0.06)',
+    border: '1px solid rgba(239,68,68,0.2)',
+    padding: '0.75rem 1rem',
+    borderRadius: '8px',
+    color: '#b91c1c',
+    fontSize: '0.9rem',
+    fontWeight: '600',
+    marginBottom: '1.5rem',
+  },
+  emptyState: {
     display: 'flex',
     flexDirection: 'column',
-    justifyContent: 'space-between',
-    minHeight: '140px',
-    borderRadius: '12px'
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '6rem 2rem',
+    textAlign: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: '12px',
+    border: '1px solid var(--border)',
   },
-  summaryLabel: {
-    fontSize: '0.8rem',
+  emptyTitle: {
+    marginTop: '1.25rem',
+    fontWeight: '700',
+    fontSize: '1.1rem',
+    color: 'var(--text-main)',
+  },
+  emptySubtitle: {
+    fontSize: '0.9rem',
+    color: 'var(--text-sub)',
+    marginTop: '0.5rem',
+  },
+  cardList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1.25rem',
+  },
+};
+
+const cardStyles = {
+  wrapper: {
+    padding: 0,
+    overflow: 'hidden',
+    borderRadius: '12px',
+    transition: 'box-shadow 0.2s ease',
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '1.25rem 1.5rem',
+    cursor: 'pointer',
+    gap: '1rem',
+    userSelect: 'none',
+  },
+  headerLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '1rem',
+    flex: 1,
+    minWidth: 0,
+  },
+  iconBox: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '10px',
+    backgroundColor: 'rgba(37,99,235,0.08)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  sessionDate: {
+    fontWeight: '700',
+    fontSize: '1rem',
+    color: 'var(--text-main)',
+  },
+  sessionTime: {
+    fontSize: '0.85rem',
+    color: 'var(--text-sub)',
+    marginTop: '0.1rem',
+  },
+  duration: {
+    fontWeight: '500',
+  },
+  headerRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    flexShrink: 0,
+  },
+  chevron: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    transition: 'transform 0.2s ease',
+    marginLeft: '0.25rem',
+  },
+  body: {
+    borderTop: '1px solid var(--border)',
+    padding: '1.5rem',
+    backgroundColor: '#f8fafc',
+  },
+  statsRow: {
+    display: 'flex',
+    gap: '1rem',
+    flexWrap: 'wrap',
+    marginBottom: '1.5rem',
+  },
+  detailGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+    gap: '1.25rem',
+  },
+};
+
+const chipStyles = {
+  chip: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    border: '1px solid var(--border)',
+    borderRadius: '10px',
+    padding: '0.625rem 1.25rem',
+    minWidth: '80px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+  },
+  value: {
+    fontSize: '1.4rem',
+    fontWeight: '800',
+    lineHeight: 1,
+  },
+  label: {
+    fontSize: '0.72rem',
+    fontWeight: '600',
+    color: 'var(--text-sub)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    marginTop: '0.25rem',
+  },
+};
+
+const sectionStyles = {
+  section: {
+    backgroundColor: '#ffffff',
+    border: '1px solid var(--border)',
+    borderRadius: '10px',
+    overflow: 'hidden',
+  },
+  title: {
+    fontSize: '0.75rem',
     fontWeight: '700',
     color: 'var(--text-sub)',
     textTransform: 'uppercase',
-    letterSpacing: '0.025em'
+    letterSpacing: '0.06em',
+    padding: '0.625rem 1rem',
+    backgroundColor: '#f1f5f9',
+    borderBottom: '1px solid var(--border)',
   },
-  summaryValue: {
-    fontSize: '2rem',
-    fontWeight: '800',
-    color: 'var(--text-main)',
-    margin: '0.5rem 0'
-  },
-  summarySub: {
-    fontSize: '0.8rem',
-    color: 'var(--text-sub)',
-    fontWeight: '500'
-  },
-  gridCol2: {
-    gridColumn: 'span 2'
-  },
-  chartWrapper: {
+  rows: {
     display: 'flex',
-    justifyContent: 'center',
+    flexDirection: 'column',
+  },
+};
+
+const rowStyles = {
+  row: {
+    display: 'flex',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    width: '100%',
-    padding: '1rem 0'
-  }
+    padding: '0.6rem 1rem',
+    borderBottom: '1px solid #f1f5f9',
+  },
+  label: {
+    fontSize: '0.82rem',
+    fontWeight: '600',
+    color: 'var(--text-sub)',
+    flexShrink: 0,
+    marginRight: '1rem',
+  },
+  value: {
+    fontSize: '0.88rem',
+    fontWeight: '700',
+    color: 'var(--text-main)',
+    textAlign: 'right',
+  },
 };
