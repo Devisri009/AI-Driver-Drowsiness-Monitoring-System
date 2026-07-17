@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { AppContext } from '../context/AppContext';
 import { Icons } from './Icons';
 
-export const Sidebar = () => {
+export const Sidebar = ({ isOpen, onClose }) => {
   const { logoutUser, currentUser } = useContext(AppContext);
   const navigate = useNavigate();
 
@@ -17,77 +17,91 @@ export const Sidebar = () => {
   ];
 
   return (
-    <aside style={styles.sidebar}>
-      {/* Brand Header */}
-      <div style={styles.brandContainer}>
-        <div style={styles.brandLogo}>
-          <Icons.Eye size={24} color="#ffffff" />
-        </div>
-        <div style={styles.brandTextContainer}>
-          <span style={styles.brandTitle}>DriveGuard</span>
-          <span style={styles.brandSubtitle}>Personal AI Monitor</span>
-        </div>
-      </div>
-
-      {/* Navigation List */}
-      <nav style={styles.nav}>
-        <ul style={styles.navList}>
-          {navItems.map((item) => (
-            <li key={item.name} style={styles.navItem}>
-              <NavLink
-                to={item.path}
-                style={({ isActive }) => ({
-                  ...styles.navLink,
-                  ...(isActive ? styles.activeNavLink : {})
-                })}
-              >
-                {({ isActive }) => (
-                  <>
-                    <span style={{
-                      ...styles.navIcon,
-                      color: isActive ? 'var(--primary)' : 'var(--text-sub)'
-                    }}>
-                      {item.icon}
-                    </span>
-                    <span style={{
-                      color: isActive ? 'var(--text-main)' : 'var(--text-sub)',
-                      fontWeight: isActive ? '600' : '500'
-                    }}>
-                      {item.name}
-                    </span>
-                    {isActive && <div style={styles.activeIndicator} />}
-                  </>
-                )}
-              </NavLink>
-            </li>
-          ))}
-        </ul>
-      </nav>
-
-      {/* Profile & Logout Info */}
-      <div style={styles.footer}>
-        <div style={styles.userInfo}>
-          <div style={styles.avatar}>
-            {currentUser?.name?.charAt(0) || 'D'}
+    <>
+      {/* Background overlay for mobile */}
+      <div 
+        className={`sidebar-overlay ${isOpen ? 'visible' : ''}`} 
+        onClick={onClose} 
+      />
+      <aside className={`sidebar-wrapper ${isOpen ? 'open' : ''}`} style={styles.sidebar}>
+        {/* Brand Header */}
+        <div style={styles.brandContainer}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexGrow: 1 }}>
+            <div style={styles.brandLogo}>
+              <Icons.Eye size={24} color="#ffffff" />
+            </div>
+            <div style={styles.brandTextContainer}>
+              <span style={styles.brandTitle}>DriveGuard</span>
+              <span style={styles.brandSubtitle}>Personal AI Monitor</span>
+            </div>
           </div>
-          <div style={styles.userText}>
-            <div style={styles.userName}>{currentUser?.name || 'Driver'}</div>
-            <div style={styles.userRole}>Account Owner</div>
-          </div>
+          {/* Close button - visible only on mobile/tablet */}
+          <button onClick={onClose} className="sidebar-close-btn" title="Close Menu">
+            <Icons.Close size={20} color="var(--text-sub)" />
+          </button>
         </div>
-        <button 
-          onClick={() => {
-            logoutUser();
-            navigate('/');
-          }} 
-          style={styles.logoutBtn} 
-          title="Log Out"
-        >
-          <Icons.Logout size={20} color="var(--danger)" />
-          <span style={styles.logoutText}>Sign Out</span>
-        </button>
-      </div>
-    </aside>
+
+        {/* Navigation List */}
+        <nav style={styles.nav}>
+          <ul style={styles.navList}>
+            {navItems.map((item) => (
+              <li key={item.name} style={styles.navItem}>
+                <NavLink
+                  to={item.path}
+                  onClick={onClose}
+                  style={({ isActive }) => ({
+                    ...styles.navLink,
+                    ...(isActive ? styles.activeNavLink : {})
+                  })}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <span style={{
+                        ...styles.navIcon,
+                        color: isActive ? 'var(--primary)' : 'var(--text-sub)'
+                      }}>
+                        {item.icon}
+                      </span>
+                      <span style={{
+                        color: isActive ? 'var(--text-main)' : 'var(--text-sub)',
+                        fontWeight: isActive ? '600' : '500'
+                      }}>
+                        {item.name}
+                      </span>
+                      {isActive && <div style={styles.activeIndicator} />}
+                    </>
+                  )}
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+        </nav>
+
+        {/* Profile & Logout Info */}
+        <div style={styles.footer}>
+          <div style={styles.userInfo}>
+            <div style={styles.avatar}>
+              {currentUser?.name?.charAt(0) || 'D'}
+            </div>
+            <div style={styles.userText}>
+              <div style={styles.userName}>{currentUser?.name || 'Driver'}</div>
+              <div style={styles.userRole}>Account Owner</div>
+            </div>
+          </div>
+          <button 
+            onClick={() => {
+              logoutUser();
+              navigate('/');
+            }} 
+            style={styles.logoutBtn} 
+            title="Log Out"
+          >
+            <Icons.Logout size={20} color="var(--danger)" />
+            <span style={styles.logoutText}>Sign Out</span>
+          </button>
+        </div>
+      </aside>
+    </>
   );
 };
 

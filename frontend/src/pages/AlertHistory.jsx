@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api/api';
 import { Icons } from '../components/Icons';
+import { LoadingSpinner, ErrorCard, EmptyState } from '../components/UIFeedback';
 
 export const AlertHistory = () => {
   const [alerts, setAlerts] = useState([]);
@@ -65,17 +66,12 @@ export const AlertHistory = () => {
 
       {/* Loading */}
       {loading && (
-        <div style={styles.infoBanner}>
-          <span>Loading alerts...</span>
-        </div>
+        <LoadingSpinner message="Loading alert history..." />
       )}
 
       {/* Error */}
-      {error && (
-        <div style={styles.errorBanner}>
-          <Icons.Warning size={18} color="#b91c1c" />
-          <span>{error}</span>
-        </div>
+      {!loading && error && (
+        <ErrorCard message={error} onRetry={() => window.location.reload()} />
       )}
 
       {!loading && !error && (
@@ -100,11 +96,11 @@ export const AlertHistory = () => {
           {/* Table Audit List */}
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
             {filteredAlerts.length === 0 ? (
-              <div style={styles.emptyState}>
-                <Icons.Check size={40} color="var(--success)" />
-                <h3 style={{ marginTop: '1rem', fontWeight: '700', color: 'var(--text-main)' }}>No alerts recorded yet.</h3>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-sub)', marginTop: '0.5rem' }}>You have no history of drowsiness or fatigue warnings matching this filter.</p>
-              </div>
+              <EmptyState
+                icon={<Icons.Check size={40} color="var(--success)" />}
+                title={riskFilter === 'All' ? 'No alerts recorded yet' : `No ${riskFilter.toLowerCase()} severity alerts`}
+                description="You have no drowsiness or fatigue warnings matching this filter."
+              />
             ) : (
               <div className="table-container" style={{ border: 'none', borderRadius: 0 }}>
                 <table className="custom-table">

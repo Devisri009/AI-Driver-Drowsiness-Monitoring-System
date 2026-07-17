@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Icons } from '../components/Icons';
 import { api } from '../api/api';
+import { LoadingSpinner, ErrorCard } from '../components/UIFeedback';
 
 // ── Default values mirroring backend entity defaults ─────────────────────────
 const DEFAULT_SETTINGS = {
@@ -33,28 +34,28 @@ function validate(form) {
 
 // ── Reusable form-field sub-components ───────────────────────────────────────
 const FieldRow = ({ label, hint, children, error }) => (
-  <div style={styles.fieldRow}>
-    <div style={styles.fieldMeta}>
-      <label style={styles.fieldLabel}>{label}</label>
-      {hint && <span style={styles.fieldHint}>{hint}</span>}
+  <div className="settings-field-row">
+    <div className="settings-field-meta">
+      <label className="settings-field-label">{label}</label>
+      {hint && <span className="settings-field-hint">{hint}</span>}
     </div>
-    <div style={styles.fieldControl}>
+    <div className="settings-field-control">
       {children}
-      {error && <span style={styles.fieldError}>{error}</span>}
+      {error && <span className="settings-field-error">{error}</span>}
     </div>
   </div>
 );
 
 const SectionCard = ({ icon, title, subtitle, children }) => (
-  <div className="card" style={styles.sectionCard}>
-    <div style={styles.sectionHeader}>
-      <div style={styles.sectionIconBox}>{icon}</div>
-      <div>
-        <h3 style={styles.sectionTitle}>{title}</h3>
-        {subtitle && <p style={styles.sectionSubtitle}>{subtitle}</p>}
+  <div className="card settings-section-card">
+    <div className="settings-section-header">
+      <div className="settings-section-icon-box">{icon}</div>
+      <div className="settings-section-title-group">
+        <h3 className="settings-section-title">{title}</h3>
+        {subtitle && <p className="settings-section-subtitle">{subtitle}</p>}
       </div>
     </div>
-    <div style={styles.sectionBody}>{children}</div>
+    <div className="settings-section-body">{children}</div>
   </div>
 );
 
@@ -151,10 +152,13 @@ export const Settings = () => {
     <div className="page-container">
 
       {/* Page header */}
-      <div style={styles.pageHeader}>
+      <div className="settings-page-header">
+        <div className="settings-page-header-icon">
+          <Icons.Eye size={28} color="var(--primary)" />
+        </div>
         <div>
-          <h1 style={styles.pageTitle}>AI Monitoring Settings</h1>
-          <p style={styles.pageSubtitle}>
+          <h1 className="settings-page-title">AI Monitoring Settings</h1>
+          <p className="settings-page-subtitle">
             Configure how DriveGuard detects drowsiness and triggers alerts.
           </p>
         </div>
@@ -162,7 +166,7 @@ export const Settings = () => {
 
       {/* Toast */}
       {toast && (
-        <div style={styles.toast}>
+        <div className="settings-toast">
           <Icons.Check size={18} color="var(--success)" />
           <span>{toast}</span>
         </div>
@@ -170,15 +174,12 @@ export const Settings = () => {
 
       {/* Fetch error */}
       {fetchErr && (
-        <div style={styles.errorBanner}>
-          <Icons.Warning size={18} color="#b91c1c" />
-          <span>{fetchErr}</span>
-        </div>
+        <ErrorCard message={fetchErr} onRetry={() => window.location.reload()} />
       )}
 
       {/* Save error */}
       {saveErr && (
-        <div style={styles.errorBanner}>
+        <div className="settings-error-banner">
           <Icons.Warning size={18} color="#b91c1c" />
           <span>{saveErr}</span>
         </div>
@@ -186,17 +187,15 @@ export const Settings = () => {
 
       {/* Loading skeleton */}
       {loading && (
-        <div style={styles.loadingBanner}>
-          <span>Loading settings…</span>
-        </div>
+        <LoadingSpinner message="Loading settings..." />
       )}
 
       {!loading && (
-        <form onSubmit={handleSave} style={styles.form} noValidate>
+        <form onSubmit={handleSave} className="settings-form" noValidate>
 
           {/* ── Section 1: Camera ── */}
           <SectionCard
-            icon={<Icons.Monitor size={22} color="var(--primary)" />}
+            icon={<Icons.Monitor size={24} color="var(--primary)" />}
             title="Camera"
             subtitle="Select which camera device the AI module should use."
           >
@@ -211,14 +210,14 @@ export const Settings = () => {
                 step={1}
                 value={form.cameraIndex}
                 onChange={e => handleNumericChange('cameraIndex', e.target.value)}
-                style={errors.cameraIndex ? styles.inputError : {}}
+                className={errors.cameraIndex ? 'settings-input-error' : ''}
               />
             </FieldRow>
           </SectionCard>
 
           {/* ── Section 2: AI Detection ── */}
           <SectionCard
-            icon={<Icons.Eye size={22} color="var(--primary)" />}
+            icon={<Icons.Eye size={24} color="var(--primary)" />}
             title="AI Detection"
             subtitle="Tune the sensitivity thresholds used by the drowsiness detection model."
           >
@@ -234,7 +233,7 @@ export const Settings = () => {
                 step={0.01}
                 value={form.earThreshold}
                 onChange={e => handleNumericChange('earThreshold', e.target.value, true)}
-                style={errors.earThreshold ? styles.inputError : {}}
+                className={errors.earThreshold ? 'settings-input-error' : ''}
               />
             </FieldRow>
 
@@ -250,7 +249,7 @@ export const Settings = () => {
                 step={0.01}
                 value={form.marThreshold}
                 onChange={e => handleNumericChange('marThreshold', e.target.value, true)}
-                style={errors.marThreshold ? styles.inputError : {}}
+                className={errors.marThreshold ? 'settings-input-error' : ''}
               />
             </FieldRow>
 
@@ -265,7 +264,7 @@ export const Settings = () => {
                 step={1}
                 value={form.drowsyFrames}
                 onChange={e => handleNumericChange('drowsyFrames', e.target.value)}
-                style={errors.drowsyFrames ? styles.inputError : {}}
+                className={errors.drowsyFrames ? 'settings-input-error' : ''}
               />
             </FieldRow>
 
@@ -280,41 +279,40 @@ export const Settings = () => {
                 step={1}
                 value={form.sleepingFrames}
                 onChange={e => handleNumericChange('sleepingFrames', e.target.value)}
-                style={errors.sleepingFrames ? styles.inputError : {}}
+                className={errors.sleepingFrames ? 'settings-input-error' : ''}
               />
             </FieldRow>
           </SectionCard>
 
           {/* ── Section 3: Alarm ── */}
           <SectionCard
-            icon={<Icons.Alerts size={22} color="var(--primary)" />}
+            icon={<Icons.Alerts size={24} color="var(--primary)" />}
             title="Alarm"
             subtitle="Control the audible alert that sounds when drowsiness is detected."
           >
             {/* Enable/Disable toggle */}
-            <div style={styles.toggleRow}>
-              <div style={styles.fieldMeta}>
-                <span style={styles.fieldLabel}>Enable Alarm</span>
-                <span style={styles.fieldHint}>
-                  Sound an alert when the driver appears drowsy or asleep.
-                </span>
-              </div>
+            <FieldRow
+              label="Enable Alarm"
+              hint="Sound an alert when the driver appears drowsy or asleep."
+            >
               <button
                 type="button"
                 role="switch"
                 aria-checked={form.alarmEnabled}
                 onClick={() => handleChange('alarmEnabled', !form.alarmEnabled)}
+                className="settings-toggle"
                 style={{
-                  ...styles.toggle,
                   backgroundColor: form.alarmEnabled ? 'var(--primary)' : 'var(--border)',
                 }}
               >
-                <span style={{
-                  ...styles.toggleKnob,
-                  transform: form.alarmEnabled ? 'translateX(22px)' : 'translateX(2px)',
-                }} />
+                <span
+                  className="settings-toggle-knob"
+                  style={{
+                    transform: form.alarmEnabled ? 'translateX(24px)' : 'translateX(2px)',
+                  }}
+                />
               </button>
-            </div>
+            </FieldRow>
 
             {/* Volume slider */}
             <FieldRow
@@ -322,7 +320,7 @@ export const Settings = () => {
               hint={`Current: ${form.alarmVolume}%`}
               error={errors.alarmVolume}
             >
-              <div style={styles.sliderWrapper}>
+              <div className="settings-slider-wrapper">
                 <input
                   type="range"
                   min={0}
@@ -331,25 +329,24 @@ export const Settings = () => {
                   value={form.alarmVolume}
                   disabled={!form.alarmEnabled}
                   onChange={e => handleNumericChange('alarmVolume', e.target.value)}
+                  className="settings-slider"
                   style={{
-                    ...styles.slider,
                     opacity: form.alarmEnabled ? 1 : 0.4,
                     cursor: form.alarmEnabled ? 'pointer' : 'not-allowed',
                   }}
                 />
-                <span style={styles.sliderValue}>{form.alarmVolume}%</span>
+                <span className="settings-slider-value">{form.alarmVolume}%</span>
               </div>
             </FieldRow>
           </SectionCard>
 
           {/* ── Action buttons ── */}
-          <div style={styles.actionBar}>
+          <div className="settings-action-bar">
             <button
               type="button"
-              className="btn btn-secondary"
+              className="btn btn-secondary settings-reset-btn"
               onClick={handleReset}
               disabled={saving}
-              style={styles.resetBtn}
             >
               <Icons.Rest size={16} color="var(--text-sub)" />
               <span>Reset Defaults</span>
@@ -357,13 +354,12 @@ export const Settings = () => {
 
             <button
               type="submit"
-              className="btn btn-primary"
+              className="btn btn-primary settings-save-btn"
               disabled={saving}
-              style={styles.saveBtn}
             >
               {saving ? (
                 <>
-                  <div style={styles.savingSpinner} />
+                  <div className="settings-saving-spinner" />
                   <span>Saving…</span>
                 </>
               ) : (
@@ -379,219 +375,4 @@ export const Settings = () => {
       )}
     </div>
   );
-};
-
-// ── Styles ────────────────────────────────────────────────────────────────────
-const styles = {
-  pageHeader: {
-    marginBottom: '2rem',
-  },
-  pageTitle: {
-    fontSize: '1.75rem',
-    fontWeight: '800',
-    color: 'var(--text-main)',
-    margin: 0,
-  },
-  pageSubtitle: {
-    fontSize: '0.95rem',
-    color: 'var(--text-sub)',
-    marginTop: '0.3rem',
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1.75rem',
-  },
-  // Section card
-  sectionCard: {
-    padding: '1.75rem',
-    borderRadius: '12px',
-  },
-  sectionHeader: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '1rem',
-    marginBottom: '1.5rem',
-    paddingBottom: '1rem',
-    borderBottom: '1px solid var(--border)',
-  },
-  sectionIconBox: {
-    width: '44px',
-    height: '44px',
-    borderRadius: '10px',
-    backgroundColor: 'var(--primary-light)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  sectionTitle: {
-    fontSize: '1.05rem',
-    fontWeight: '700',
-    color: 'var(--text-main)',
-    margin: '0 0 0.2rem 0',
-  },
-  sectionSubtitle: {
-    fontSize: '0.85rem',
-    color: 'var(--text-sub)',
-    margin: 0,
-  },
-  sectionBody: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1.25rem',
-  },
-  // Field row
-  fieldRow: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '1rem',
-    alignItems: 'start',
-    padding: '0.75rem 0',
-    borderBottom: '1px solid var(--border)',
-  },
-  fieldMeta: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.2rem',
-  },
-  fieldLabel: {
-    fontSize: '0.9rem',
-    fontWeight: '600',
-    color: 'var(--text-main)',
-  },
-  fieldHint: {
-    fontSize: '0.8rem',
-    color: 'var(--text-sub)',
-    lineHeight: '1.4',
-  },
-  fieldControl: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.35rem',
-  },
-  fieldError: {
-    fontSize: '0.78rem',
-    color: 'var(--danger)',
-    fontWeight: '600',
-  },
-  inputError: {
-    borderColor: 'var(--danger)',
-    outline: '2px solid rgba(239,68,68,0.2)',
-  },
-  // Toggle row (for alarm enable)
-  toggleRow: {
-    display: 'grid',
-    gridTemplateColumns: '1fr auto',
-    gap: '1rem',
-    alignItems: 'center',
-    padding: '0.75rem 0',
-    borderBottom: '1px solid var(--border)',
-  },
-  toggle: {
-    position: 'relative',
-    width: '48px',
-    height: '26px',
-    borderRadius: '999px',
-    border: 'none',
-    cursor: 'pointer',
-    padding: 0,
-    transition: 'background-color 0.2s ease',
-    flexShrink: 0,
-  },
-  toggleKnob: {
-    position: 'absolute',
-    top: '3px',
-    width: '20px',
-    height: '20px',
-    borderRadius: '50%',
-    backgroundColor: '#ffffff',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-    transition: 'transform 0.2s ease',
-  },
-  // Volume slider
-  sliderWrapper: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.75rem',
-  },
-  slider: {
-    flex: 1,
-    accentColor: 'var(--primary)',
-    height: '4px',
-  },
-  sliderValue: {
-    fontSize: '0.85rem',
-    fontWeight: '700',
-    color: 'var(--text-main)',
-    minWidth: '36px',
-    textAlign: 'right',
-  },
-  // Action bar
-  actionBar: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '1rem',
-    paddingTop: '0.5rem',
-    flexWrap: 'wrap',
-  },
-  resetBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-  },
-  saveBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-    minWidth: '140px',
-    justifyContent: 'center',
-  },
-  savingSpinner: {
-    width: '16px',
-    height: '16px',
-    border: '2px solid rgba(255,255,255,0.3)',
-    borderTopColor: '#ffffff',
-    borderRadius: '50%',
-    animation: 'spin 0.8s linear infinite',
-  },
-  // Banners
-  toast: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.625rem',
-    backgroundColor: 'var(--success-light)',
-    border: '1px solid rgba(16,185,129,0.25)',
-    padding: '0.75rem 1rem',
-    borderRadius: '8px',
-    color: '#065f46',
-    fontSize: '0.9rem',
-    fontWeight: '600',
-    marginBottom: '1.5rem',
-  },
-  errorBanner: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.625rem',
-    backgroundColor: 'rgba(239,68,68,0.06)',
-    border: '1px solid rgba(239,68,68,0.2)',
-    padding: '0.75rem 1rem',
-    borderRadius: '8px',
-    color: '#b91c1c',
-    fontSize: '0.9rem',
-    fontWeight: '600',
-    marginBottom: '1.5rem',
-  },
-  loadingBanner: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.625rem',
-    backgroundColor: '#f0f9ff',
-    border: '1px solid #bae6fd',
-    padding: '0.75rem 1rem',
-    borderRadius: '8px',
-    color: '#0369a1',
-    fontSize: '0.9rem',
-    fontWeight: '600',
-  },
 };

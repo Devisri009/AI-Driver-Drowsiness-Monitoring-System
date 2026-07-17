@@ -191,7 +191,7 @@ export const Login = () => {
       <style>{keyframes}</style>
 
       {/* Left panel – illustration */}
-      <div style={s.leftPanel}>
+      <div className="auth-left-panel" style={s.leftPanel}>
         <PanelIllustration />
       </div>
 
@@ -351,7 +351,6 @@ const s = {
     background:'linear-gradient(145deg,#0f172a,#1e3a8a,#2563EB)',
     display:'flex', flexDirection:'column',
     position:'relative',
-    '@media(max-width:900px)': { display:'none' },
   },
   /* Right panel */
   rightPanel: {

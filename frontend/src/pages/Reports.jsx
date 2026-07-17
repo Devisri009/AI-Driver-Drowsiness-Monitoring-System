@@ -1,6 +1,7 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { api } from '../api/api';
 import { Icons } from '../components/Icons';
+import { LoadingSpinner, ErrorCard, EmptyState } from '../components/UIFeedback';
 
 // ─── Formatting Helpers ────────────────────────────────────────────────────
 
@@ -311,29 +312,21 @@ export const Reports = () => {
 
       {/* ── Loading ── */}
       {loading && (
-        <div style={pageStyles.infoBanner}>
-          <span style={pageStyles.spinner} />
-          <span>Loading session reports…</span>
-        </div>
+        <LoadingSpinner message="Loading session reports..." />
       )}
 
       {/* ── Error ── */}
       {!loading && error && (
-        <div style={pageStyles.errorBanner}>
-          <Icons.Warning size={18} color="#b91c1c" />
-          <span>{error}</span>
-        </div>
+        <ErrorCard message={error} onRetry={() => window.location.reload()} />
       )}
 
       {/* ── Empty State ── */}
       {!loading && !error && summaries.length === 0 && (
-        <div style={pageStyles.emptyState}>
-          <Icons.Reports size={48} color="var(--border)" />
-          <h3 style={pageStyles.emptyTitle}>No driving sessions available.</h3>
-          <p style={pageStyles.emptySubtitle}>
-            Start monitoring to generate your first report.
-          </p>
-        </div>
+        <EmptyState 
+          icon={<Icons.Reports size={48} color="var(--border)" />}
+          title="No driving sessions available"
+          description="Start monitoring to generate your first report."
+        />
       )}
 
       {/* ── Session Cards ── */}

@@ -188,7 +188,7 @@ export const Register = () => {
       <style>{keyframes}</style>
 
       {/* Left panel */}
-      <div style={s.leftPanel}>
+      <div className="auth-left-panel" style={s.leftPanel}>
         <PanelContent />
       </div>
 
@@ -224,7 +224,7 @@ export const Register = () => {
           {/* Form */}
           <form onSubmit={handleSubmit} style={s.form}>
             {/* Name + Email row */}
-            <div style={s.row}>
+            <div className="auth-grid-2col" style={s.row}>
               <div style={s.field}>
                 <label style={s.label}>Full Name</label>
                 <div style={s.inputWrap}>

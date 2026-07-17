@@ -2,7 +2,7 @@ import React, { useContext } from 'react';
 import { AppContext } from '../context/AppContext';
 import { Icons } from './Icons';
 
-export const Navbar = () => {
+export const Navbar = ({ onToggleSidebar }) => {
   const { activeAlert, isMonitoring, currentUser, alerts } = useContext(AppContext);
 
   // Status Indicator
@@ -33,8 +33,15 @@ export const Navbar = () => {
   }).length;
 
   return (
-    <header style={styles.navbar}>
+    <header className="navbar-container" style={styles.navbar}>
       <div style={styles.left}>
+        <button onClick={onToggleSidebar} className="hamburger-btn" style={{ marginRight: '0.75rem' }} title="Toggle Menu">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
         <h2 style={styles.title}>Welcome back, {currentUser?.name || 'Driver'}</h2>
       </div>
 

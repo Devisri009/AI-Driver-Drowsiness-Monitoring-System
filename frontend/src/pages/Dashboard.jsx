@@ -4,6 +4,7 @@ import { AppContext } from '../context/AppContext';
 import { api } from '../api/api';
 import { Icons } from '../components/Icons';
 import { DriverAnalytics } from '../components/DriverAnalytics';
+import { LoadingSpinner, ErrorCard } from '../components/UIFeedback';
 
 export const Dashboard = () => {
   const { isMonitoring, currentUser } = useContext(AppContext);
@@ -62,8 +63,8 @@ export const Dashboard = () => {
 
   if (loading) {
     return (
-      <div className="page-container" style={{ maxWidth: '1200px', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
-        <h2 style={{ color: 'var(--text-main)' }}>Loading dashboard data...</h2>
+      <div className="page-container" style={{ maxWidth: '1200px' }}>
+        <LoadingSpinner message="Loading dashboard summary..." />
       </div>
     );
   }
@@ -71,10 +72,7 @@ export const Dashboard = () => {
   if (error) {
     return (
       <div className="page-container" style={{ maxWidth: '1200px' }}>
-        <div style={{ padding: '2rem', backgroundColor: 'var(--danger)', color: '#fff', borderRadius: '12px', marginTop: '2rem' }}>
-          <h3>Error</h3>
-          <p>{error}</p>
-        </div>
+        <ErrorCard message={error} onRetry={() => window.location.reload()} />
       </div>
     );
   }

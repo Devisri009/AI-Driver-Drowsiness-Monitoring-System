@@ -1,4 +1,4 @@
-import React, { useContext } from 'react';
+import React, { useState, useContext } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider, AppContext } from './context/AppContext';
 import { Sidebar } from './components/Sidebar';
@@ -16,14 +16,16 @@ import { LandingPage } from './pages/LandingPage';
 
 const ProtectedRoute = ({ children }) => {
   const { currentUser } = useContext(AppContext);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   if (!currentUser) {
     return <Navigate to="/login" replace />;
   }
   return (
     <div className="app-container">
-      <Sidebar />
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="main-content">
-        <Navbar />
+        <Navbar onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
         {children}
       </div>
       {/* Global Safety Alert Overlay */}
